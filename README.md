@@ -3,8 +3,12 @@
 ## Test Environment
 - **Platform**: PlayStation 2 (real hardware)
 - **CPU**: Emotion Engine R5900 @ 294.912 MHz
-- **GCC**: mips64r5900el-ps2-elf-gcc 15.2.0 (ps2dev/gcc) (`-O3 -ffast-math -fno-lto`)
-- **LLVM/Clang**: clang 23.0.0git (PR phase2) (`-O3 -ffast-math --target=mips64el -mcpu=r5900 -fno-pic -mno-abicalls`)
+- **GCC**: mips64r5900el-ps2-elf-gcc 15.2.0
+  - branch: ps2dev/gcc/ee-v15.2 (with instr scheduling)
+  - flags:  `-O3 -ffast-math`
+- **LLVM/Clang**: clang 23.0.0git
+  - branch: rickgaiser/llvm/r5900-phase2-fpu-v2 (with FPU support)
+  - flags:  `-O3 -ffast-math --target=mips64el -mcpu=r5900 -fno-pic -mno-abicalls`
 
 ## Performance Results
 
