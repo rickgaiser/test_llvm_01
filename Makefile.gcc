@@ -1,0 +1,29 @@
+EE_BIN = test_gcc.elf
+EE_OBJS = main.o fpu_tests.o int_tests.o vpu_tests.o
+
+# Compiler
+EE_CC=mips64r5900el-ps2-elf-gcc
+# Flags
+EE_CFLAGS=-D_EE -G0 -O3 -ffast-math -fno-lto -Wall -I/home/rgaiser/dev/ps2max/install/ps2sdk/ee/include -I/home/rgaiser/dev/ps2max/install/ps2sdk/common/include -I.
+EE_LDFLAGS=-T/home/rgaiser/dev/ps2max/install/ps2sdk/ee/startup/linkfile -L/home/rgaiser/dev/ps2max/install/ps2sdk/ee/lib -Wl,-zmax-page-size=128
+#EE_CFLAGS+=-mvu0
+
+all: $(EE_BIN)
+
+clean:
+	rm -f $(EE_BIN) $(EE_OBJS)
+
+run: $(EE_BIN)
+	ps2client -h 192.168.1.10 -t 5 execee host:$(EE_BIN)
+
+sim: $(EE_BIN)
+	flatpak --filesystem=host run net.pcsx2.PCSX2 $(PWD)/$(EE_BIN)
+
+reset:
+	ps2client reset
+
+%.elf: $(EE_OBJS)
+	$(EE_CC) $(EE_CFLAGS) -o $@ $^ $(EE_LDFLAGS)
+
+%.o: %.c
+	$(EE_CC) $(EE_CFLAGS) -c $< -o $@
