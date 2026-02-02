@@ -8,7 +8,7 @@ void vpu_vector_add(v4sf * restrict a ALIGNED16,
                    v4sf * restrict b ALIGNED16,
                    v4sf * restrict result ALIGNED16,
                    int count) {
-    #pragma GCC unroll 4
+    //#pragma GCC unroll 4
     for (int i = 0; i < count; i++) {
         result[i] = a[i] + b[i];
     }
@@ -18,7 +18,7 @@ void vpu_vector_mul(v4sf * restrict a ALIGNED16,
                    v4sf * restrict b ALIGNED16,
                    v4sf * restrict result ALIGNED16,
                    int count) {
-    #pragma GCC unroll 4
+    //#pragma GCC unroll 4
     for (int i = 0; i < count; i++) {
         result[i] = a[i] * b[i];
     }
@@ -29,7 +29,7 @@ void vpu_vector_madd(v4sf * restrict a ALIGNED16,
                     v4sf * restrict c ALIGNED16,
                     v4sf * restrict result ALIGNED16,
                     int count) {
-    #pragma GCC unroll 4
+    //#pragma GCC unroll 4
     for (int i = 0; i < count; i++) {
         result[i] = a[i] * b[i] + c[i];
     }

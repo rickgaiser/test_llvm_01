@@ -27,3 +27,4 @@ reset:
 
 %.o: %.c
 	$(EE_CC) $(EE_CFLAGS) -c $< -o $@
+	$(EE_CC) $(EE_CFLAGS) -S $< -o $(basename $<)_gcc.s

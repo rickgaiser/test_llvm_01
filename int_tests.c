@@ -1,11 +1,9 @@
 #include "int_tests.h"
 
-void int_scalar_multiply(int * restrict in ALIGNED16,
-                        int * restrict out ALIGNED16,
+void int_scalar_multiply(int * restrict in,
+                        int * restrict out,
                         int count, int scalar) {
-    //#pragma GCC unroll 4
-    #pragma clang loop interleave(enable)
-    #pragma clang loop interleave_count(4)
+    #pragma GCC unroll 4
     for (int i = 0; i < count; i++) {
         out[i] = in[i] * scalar;
     }

@@ -11,8 +11,10 @@ EE_LDFLAGS=-T$(PS2SDK)/ee/startup/linkfile -L$(PS2SDK)/ee/lib -Wl,-zmax-page-siz
 # Target
 #EE_CFLAGS+=--target=mips64el-scei-ps2 -mvu0
 EE_CFLAGS+=--target=mips64el -mcpu=r5900 -fno-pic -mno-abicalls
+# FPU
+#-ffast-math -ffp-contract=fast
 # Optimization level
-EE_CFLAGS+=-O3 -ffast-math -fomit-frame-pointer -ffp-contract=fast
+EE_CFLAGS+=-O3 -fomit-frame-pointer
 # Vectorization
 #EE_CFLAGS+=-fno-vectorize -fno-slp-vectorize
 
@@ -36,3 +38,4 @@ reset:
 
 %.o: %.c
 	$(EE_CC) $(EE_CFLAGS) -c $< -o $@
+	$(EE_CC) $(EE_CFLAGS) -S $< -o $(basename $<)_llvm.s
