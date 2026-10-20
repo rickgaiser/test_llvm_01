@@ -9,7 +9,7 @@ COMPILER ?= clang
 OUT      ?= out/$(COMPILER)
 CLANG    ?= clang
 
-SRCS = main.c fpu_tests.c int_tests.c vpu_tests.c
+SRCS = main.c fpu_tests.c int_tests.c vpu_tests.c stream_tests.c
 OBJS = $(SRCS:%.c=$(OUT)/%.o)
 ASMS = $(SRCS:%.c=$(OUT)/%.s)
 BIN  = $(OUT)/test.elf
