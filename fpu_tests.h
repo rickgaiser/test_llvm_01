@@ -47,4 +47,8 @@ typedef struct {
 void fpu_compare_test(float a, float b, fpu_cmp_result_t *result);
 int fpu_compare_validate_all(void);
 
+// FPU arithmetic tests with NaN/INF special-value inputs
+// (fadd, fsub, fmul, fdiv, fsqrt)
+int fpu_special_arith_validate_all(void);
+
 #endif // FPU_TESTS_H

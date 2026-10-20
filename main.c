@@ -206,6 +206,11 @@ int main() {
     int cmp_pass = fpu_compare_validate_all();
     printf("\n");
 
+    // === FPU Special Arithmetic Tests (NaN / +-INF inputs) ===
+    printf("=== FPU Special Arith Tests (NaN/INF) ===\n\n");
+    int special_pass = fpu_special_arith_validate_all();
+    printf("\n");
+
     // === FPU Tests ===
     printf("=== FPU Tests ===\n\n");
 
