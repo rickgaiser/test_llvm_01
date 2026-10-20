@@ -5,6 +5,7 @@
 #include "int_tests.h"
 #include "vpu_tests.h"
 #include "stream_tests.h"
+#include "uarch_tests.h"
 
 #define NUM_ITERATIONS 100000
 
@@ -584,6 +585,10 @@ int main() {
         printf("Result: %u\n", check);
         printf("Performance: %.2f MB/s\n\n", mbs_saxpy[d]);
     }
+
+    // === Microarchitecture tests ===
+    printf("=== Microarchitecture (CPU cycles) ===\n\n");
+    uarch_run_all((u32 *)stream_in, STREAM_INTS);
 
     // Summary
     printf("=== Summary ===\n");
