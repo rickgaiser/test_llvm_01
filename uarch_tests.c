@@ -177,6 +177,199 @@ KERNEL(k_miss_pf, 1, HALVES_SETUP,
        "lw $9, 0($8)\n" "pref 0, 0($11)\n" "addu $25, $25, $9\n"
        "addiu $8, $8, 64\n" "addiu $11, $11, 64\n")
 
+// --- 128-bit multimedia (MMI) ---
+// Not every assembler accepts the R5900 instructions, so they are .word. The
+// registers are numbers; $24 holds the pointer argument (MMI_SETUP).
+#define R3(op, d, s, t) \
+    ".word (" #op " | (" #s " << 21) | (" #t " << 16) | (" #d " << 11))\n"
+#define R2(op, d, t) ".word (" #op " | (" #t " << 16) | (" #d " << 11))\n"
+#define RSA(op, d, t, sa) \
+    ".word (" #op " | (" #t " << 16) | (" #d " << 11) | (" #sa " << 6))\n"
+#define MEM(op, t, off, b) \
+    ".word (" #op " | (" #b " << 21) | (" #t " << 16) | (" #off "))\n"
+#define LQ(t, off, b) MEM(0x78000000, t, off, b)
+#define SQ(t, off, b) MEM(0x7c000000, t, off, b)
+#define PADDW(d, s, t) R3(0x70000008, d, s, t)
+#define PCGTW(d, s, t) R3(0x70000088, d, s, t)
+#define PMAXW(d, s, t) R3(0x700000c8, d, s, t)
+#define PAND(d, s, t) R3(0x70000489, d, s, t)
+#define PEXTLW(d, s, t) R3(0x70000488, d, s, t)
+#define PPACW(d, s, t) R3(0x700004c8, d, s, t)
+#define PCPYLD(d, s, t) R3(0x70000389, d, s, t)
+#define PCPYUD(d, s, t) R3(0x700003a9, d, s, t)
+#define PMULTW(d, s, t) R3(0x70000309, d, s, t)
+#define PMULTH(d, s, t) R3(0x70000709, d, s, t)
+#define MULT3(d, s, t) R3(0x00000018, d, s, t)
+#define MULT1(d, s, t) R3(0x70000018, d, s, t)
+#define PLZCW(d, s) R3(0x70000004, d, s, 0)
+#define PEXEW(d, t) R2(0x70000789, d, t)
+#define PCPYH(d, t) R2(0x700006e9, d, t)
+#define PROT3W(d, t) R2(0x700007c9, d, t)
+#define PMFLO(d) R2(0x70000249, d, 0)
+#define PSLLW(d, t, sa) RSA(0x7000003c, d, t, sa)
+#define PSUBW(d, s, t) R3(0x70000048, d, s, t)
+#define POR(d, s, t) R3(0x700004a9, d, s, t)
+#define PXOR(d, s, t) R3(0x700004c9, d, s, t)
+#define PNOR(d, s, t) R3(0x700004e9, d, s, t)
+#define PADDB(d, s, t) R3(0x70000208, d, s, t)
+#define PADDH(d, s, t) R3(0x70000108, d, s, t)
+#define PCEQW(d, s, t) R3(0x700000a8, d, s, t)
+#define PMINW(d, s, t) R3(0x700000e8, d, s, t)
+#define PMINH(d, s, t) R3(0x700001e8, d, s, t)
+#define PADDSW(d, s, t) R3(0x70000408, d, s, t)
+#define PADDUB(d, s, t) R3(0x70000628, d, s, t)
+#define PSUBUH(d, s, t) R3(0x70000568, d, s, t)
+#define PSUBUW(d, s, t) R3(0x70000468, d, s, t)
+#define PABSW(d, t) R2(0x70000068, d, t)
+#define PABSH(d, t) R2(0x70000168, d, t)
+#define PMFHI(d) R2(0x70000209, d, 0)
+#define PSRLW(d, t, sa) RSA(0x7000003e, d, t, sa)
+#define PSRAW(d, t, sa) RSA(0x7000003f, d, t, sa)
+#define PSRAH(d, t, sa) RSA(0x70000037, d, t, sa)
+#define PSLLH(d, t, sa) RSA(0x70000034, d, t, sa)
+
+#define MMI_SETUP SETUP "move $24, %3\n"
+
+// Latency: each instruction depends on the previous one
+KERNEL(k_paddw, 64, MMI_SETUP, PADDW(9, 9, 10))
+KERNEL(k_pcgtw, 64, MMI_SETUP, PCGTW(9, 9, 10))
+KERNEL(k_pmaxw, 64, MMI_SETUP, PMAXW(9, 9, 10))
+KERNEL(k_pand, 64, MMI_SETUP, PAND(9, 9, 10))
+KERNEL(k_psllw, 64, MMI_SETUP, PSLLW(9, 9, 1))
+KERNEL(k_pextlw, 64, MMI_SETUP, PEXTLW(9, 9, 10))
+KERNEL(k_ppacw, 64, MMI_SETUP, PPACW(9, 9, 10))
+KERNEL(k_pcpyld, 64, MMI_SETUP, PCPYLD(9, 9, 10))
+KERNEL(k_pcpyud, 64, MMI_SETUP, PCPYUD(9, 9, 10))
+KERNEL(k_pexew, 64, MMI_SETUP, PEXEW(9, 9))
+KERNEL(k_pcpyh, 64, MMI_SETUP, PCPYH(9, 9))
+KERNEL(k_prot3w, 64, MMI_SETUP, PROT3W(9, 9))
+KERNEL(k_plzcw, 64, MMI_SETUP, PLZCW(9, 9))
+KERNEL(k_pmultw, 64, MMI_SETUP, PMULTW(9, 9, 10))
+KERNEL(k_pmulth, 64, MMI_SETUP, PMULTH(9, 9, 10))
+KERNEL(k_pmultw_pmflo, 64, MMI_SETUP, PMULTW(0, 9, 10) PMFLO(9))
+KERNEL(k_mult3, 64, MMI_SETUP, MULT3(9, 9, 10))
+KERNEL(k_mult1_3, 64, MMI_SETUP, MULT1(9, 9, 10))
+// p[0] = p: lq reads its own address
+KERNEL(k_lq, 64, MMI_SETUP "move $9, %3\n", LQ(9, 0, 9))
+KERNEL(k_psubw, 64, MMI_SETUP, PSUBW(9, 9, 10))
+KERNEL(k_por, 64, MMI_SETUP, POR(9, 9, 10))
+KERNEL(k_pxor, 64, MMI_SETUP, PXOR(9, 9, 10))
+KERNEL(k_pnor, 64, MMI_SETUP, PNOR(9, 9, 10))
+KERNEL(k_paddb, 64, MMI_SETUP, PADDB(9, 9, 10))
+KERNEL(k_paddh, 64, MMI_SETUP, PADDH(9, 9, 10))
+KERNEL(k_pceqw, 64, MMI_SETUP, PCEQW(9, 9, 10))
+KERNEL(k_pminw, 64, MMI_SETUP, PMINW(9, 9, 10))
+KERNEL(k_pminh, 64, MMI_SETUP, PMINH(9, 9, 10))
+KERNEL(k_paddsw, 64, MMI_SETUP, PADDSW(9, 9, 10))
+KERNEL(k_paddub, 64, MMI_SETUP, PADDUB(9, 9, 10))
+KERNEL(k_psubuh, 64, MMI_SETUP, PSUBUH(9, 9, 10))
+KERNEL(k_psubuw, 64, MMI_SETUP, PSUBUW(9, 9, 10))
+KERNEL(k_pabsw, 64, MMI_SETUP, PABSW(9, 9))
+KERNEL(k_pabsh, 64, MMI_SETUP, PABSH(9, 9))
+KERNEL(k_psrlw, 64, MMI_SETUP, PSRLW(9, 9, 1))
+KERNEL(k_psraw, 64, MMI_SETUP, PSRAW(9, 9, 1))
+KERNEL(k_psrah, 64, MMI_SETUP, PSRAH(9, 9, 1))
+KERNEL(k_psllh, 64, MMI_SETUP, PSLLH(9, 9, 1))
+
+// Producer and consumer per repetition, independent between repetitions
+KERNEL(k_lq_paddw, 64, MMI_SETUP, LQ(9, 0, 24) PADDW(10, 9, 11))
+KERNEL(k_lq_addu, 64, MMI_SETUP, LQ(9, 0, 24) "addu $10, $9, $11\n")
+KERNEL(k_paddw_addu, 64, MMI_SETUP, PADDW(9, 11, 12) "addu $10, $9, $11\n")
+KERNEL(k_addu_paddw, 64, MMI_SETUP, "addu $9, $11, $12\n" PADDW(10, 9, 11))
+KERNEL(k_paddw_sq, 64, MMI_SETUP, PADDW(9, 11, 12) SQ(9, 32, 24))
+KERNEL(k_psllw_paddw, 64, MMI_SETUP, PSLLW(9, 11, 1) PADDW(10, 9, 11))
+KERNEL(k_pcpyud_addu, 64, MMI_SETUP, PCPYUD(9, 11, 11) "addu $10, $9, $11\n")
+KERNEL(k_pmultw_paddw, 64, MMI_SETUP, PMULTW(9, 11, 12) PADDW(10, 9, 11))
+KERNEL(k_mult3_addu, 64, MMI_SETUP, MULT3(9, 11, 12) "addu $10, $9, $11\n")
+
+// Round trips through memory, as in a stack temporary: each store is read back
+// by the next load, which feeds the next store
+KERNEL(k_sw_lw, 64, MMI_SETUP, "sw $9, 32($24)\n" "lw $9, 32($24)\n")
+KERNEL(k_sq_lq, 64, MMI_SETUP, SQ(9, 32, 24) LQ(9, 32, 24))
+KERNEL(k_sq_lw, 64, MMI_SETUP, SQ(9, 32, 24) "lw $9, 36($24)\n")
+KERNEL(k_sq_ld, 64, MMI_SETUP, SQ(9, 32, 24) "ld $9, 40($24)\n")
+KERNEL(k_sw_lq, 64, MMI_SETUP, "sw $9, 44($24)\n" LQ(9, 32, 24))
+KERNEL(k_sd2_lq, 64, MMI_SETUP,
+       "sd $9, 32($24)\n" "sd $9, 40($24)\n" LQ(9, 32, 24))
+KERNEL(k_sw4_lq, 64, MMI_SETUP,
+       "sw $9, 32($24)\n" "sw $9, 36($24)\n" "sw $9, 40($24)\n"
+       "sw $9, 44($24)\n" LQ(9, 32, 24))
+
+// Unaligned 128-bit load and store sequences, independent between repetitions.
+// Through a stack temporary (as currently lowered):
+KERNEL(k_uload_stack, 16, MMI_SETUP,
+       "ldl $9, 31($24)\n" "ldr $9, 24($24)\n" "sd $9, 56($24)\n"
+       "ldl $10, 23($24)\n" "ldr $10, 16($24)\n" "sd $10, 48($24)\n"
+       LQ(11, 48, 24) PADDW(12, 11, 13))
+// Combining the halves with pcpyld:
+KERNEL(k_uload_pcpyld, 16, MMI_SETUP,
+       "ldl $9, 31($24)\n" "ldr $9, 24($24)\n" "ldl $10, 23($24)\n"
+       "ldr $10, 16($24)\n" PCPYLD(11, 9, 10) PADDW(12, 11, 13))
+KERNEL(k_ustore_stack, 16, MMI_SETUP,
+       PADDW(11, 12, 13) SQ(11, 48, 24) "ld $9, 56($24)\n" "ld $10, 48($24)\n"
+       "sdl $9, 31($24)\n" "sdr $9, 24($24)\n" "sdl $10, 23($24)\n"
+       "sdr $10, 16($24)\n")
+KERNEL(k_ustore_pcpyud, 16, MMI_SETUP,
+       PADDW(11, 12, 13) PCPYUD(9, 11, 11) "sdl $9, 31($24)\n"
+       "sdr $9, 24($24)\n" "sdl $11, 23($24)\n" "sdr $11, 16($24)\n")
+
+// Pairing: independent instructions
+KERNEL(k_paddw_paddw, 64, MMI_SETUP, PADDW(9, 12, 13) PADDW(10, 12, 13))
+KERNEL(k_paddw_addu2, 64, MMI_SETUP, PADDW(9, 12, 13) "addu $10, $12, $13\n")
+KERNEL(k_addu_paddw2, 64, MMI_SETUP, "addu $10, $12, $13\n" PADDW(9, 12, 13))
+KERNEL(k_paddw_lw, 64, MMI_SETUP, PADDW(9, 12, 13) "lw $10, 0($24)\n")
+KERNEL(k_paddw_lq, 64, MMI_SETUP, PADDW(9, 12, 13) LQ(10, 0, 24))
+KERNEL(k_paddw_sq2, 64, MMI_SETUP, PADDW(9, 12, 13) SQ(12, 48, 24))
+KERNEL(k_lq_lq, 64, MMI_SETUP, LQ(9, 0, 24) LQ(10, 16, 24))
+KERNEL(k_sq_sq, 64, MMI_SETUP, SQ(12, 32, 24) SQ(13, 48, 24))
+KERNEL(k_psllw_paddw2, 64, MMI_SETUP, PSLLW(9, 12, 1) PADDW(10, 12, 13))
+KERNEL(k_psllw_addu, 64, MMI_SETUP, PSLLW(9, 12, 1) "addu $10, $12, $13\n")
+KERNEL(k_pcpyld_paddw, 64, MMI_SETUP, PCPYLD(9, 12, 13) PADDW(10, 12, 13))
+KERNEL(k_paddw_plzcw, 64, MMI_SETUP, PADDW(9, 12, 13) PLZCW(10, 12))
+KERNEL(k_paddw_mult1, 64, MMI_SETUP, PADDW(9, 12, 13) MULT1(10, 12, 13))
+KERNEL(k_pmultw_addu, 64, MMI_SETUP, PMULTW(9, 12, 13) "addu $10, $12, $13\n")
+KERNEL(k_pmultw_x1, 64, MMI_SETUP, PMULTW(9, 12, 13))
+KERNEL(k_mult3_x1, 64, MMI_SETUP, MULT3(9, 12, 13))
+KERNEL(k_mult3_mult1, 64, MMI_SETUP, MULT3(9, 12, 13) MULT1(10, 12, 13))
+KERNEL(k_mult3_addu2, 64, MMI_SETUP, MULT3(9, 12, 13) "addu $10, $12, $13\n")
+KERNEL(k_pmflo_addu, 64, MMI_SETUP, PMFLO(9) "addu $10, $12, $13\n")
+KERNEL(k_pmfhi_lw, 64, MMI_SETUP, PMFHI(9) "lw $10, 0($24)\n")
+KERNEL(k_pabsw_addu, 64, MMI_SETUP, PABSW(9, 12) "addu $10, $12, $13\n")
+KERNEL(k_psrlw_lw, 64, MMI_SETUP, PSRLW(9, 12, 1) "lw $10, 0($24)\n")
+
+// out[j] = in[j] * 3 + 1 for one 64-byte line (in at 0, out at 64), in cache.
+// Scalar, 4 elements interleaved:
+#define SC4(o)                                                          \
+    "lw $8, " #o "+0($24)\n" "lw $9, " #o "+4($24)\n"                   \
+    "lw $10, " #o "+8($24)\n" "lw $11, " #o "+12($24)\n"                \
+    "sll $12, $8, 1\n" "sll $13, $9, 1\n" "sll $14, $10, 1\n"           \
+    "sll $25, $11, 1\n" "addu $8, $12, $8\n" "addu $9, $13, $9\n"       \
+    "addu $10, $14, $10\n" "addu $11, $25, $11\n" "addiu $8, $8, 1\n"   \
+    "addiu $9, $9, 1\n" "addiu $10, $10, 1\n" "addiu $11, $11, 1\n"     \
+    "sw $8, 64+" #o "+0($24)\n" "sw $9, 64+" #o "+4($24)\n"             \
+    "sw $10, 64+" #o "+8($24)\n" "sw $11, 64+" #o "+12($24)\n"
+KERNEL(k_scale_scalar, 1, MMI_SETUP, SC4(0) SC4(16) SC4(32) SC4(48))
+// MMI, aligned: lq, psllw, paddw, paddw (the splat of 1 is in $15), sq
+#define VSC(op4) op4(8, 12, 0) op4(9, 13, 16) op4(10, 14, 32) op4(11, 25, 48)
+#define V_LQ(r, t, o) LQ(r, o, 24)
+#define V_SLL(r, t, o) PSLLW(t, r, 1)
+#define V_ADD(r, t, o) PADDW(t, t, r)
+#define V_ADD1(r, t, o) PADDW(t, t, 15)
+#define V_SQ(r, t, o) SQ(t, 64 + o, 24)
+KERNEL(k_scale_mmi, 1, MMI_SETUP,
+       VSC(V_LQ) VSC(V_SLL) VSC(V_ADD) VSC(V_ADD1) VSC(V_SQ))
+// MMI, unaligned: ldl/ldr + pcpyld, ..., pcpyud + sdl/sdr
+#define V_ULD(r, t, o)                                                  \
+    "ldl $" #r ", " #o "+15($24)\n" "ldr $" #r ", " #o "+8($24)\n"      \
+    "ldl $" #t ", " #o "+7($24)\n" "ldr $" #t ", " #o "+0($24)\n"       \
+    PCPYLD(r, r, t)
+#define V_UST(r, t, o)                                                  \
+    PCPYUD(r, t, t) "sdl $" #r ", 64+" #o "+15($24)\n"                  \
+    "sdr $" #r ", 64+" #o "+8($24)\n" "sdl $" #t ", 64+" #o "+7($24)\n" \
+    "sdr $" #t ", 64+" #o "+0($24)\n"
+KERNEL(k_scale_mmi_u, 1, MMI_SETUP,
+       VSC(V_ULD) VSC(V_SLL) VSC(V_ADD) VSC(V_ADD1) VSC(V_UST))
+
 typedef u32 (*kernel_fn)(u32 *p, int iters);
 
 typedef struct {
@@ -269,6 +462,131 @@ void uarch_run_all(u32 *big, int big_words) {
     for (unsigned i = 0; i < sizeof(pair) / sizeof(pair[0]); i++)
         print_line(pair[i].name, run(pair[i].fn, buf, LAT_ITERS, pair[i].reps),
                    pair[i].unit, pair[i].expect);
+
+    static const uarch_test mmi_lat[] = {
+        {"paddw", k_paddw, 64, "instr", "?"},
+        {"pcgtw", k_pcgtw, 64, "instr", "?"},
+        {"pmaxw", k_pmaxw, 64, "instr", "?"},
+        {"pand", k_pand, 64, "instr", "?"},
+        {"psllw", k_psllw, 64, "instr", "?"},
+        {"pextlw", k_pextlw, 64, "instr", "?"},
+        {"ppacw", k_ppacw, 64, "instr", "?"},
+        {"pcpyld", k_pcpyld, 64, "instr", "?"},
+        {"pcpyud", k_pcpyud, 64, "instr", "?"},
+        {"pexew", k_pexew, 64, "instr", "?"},
+        {"pcpyh", k_pcpyh, 64, "instr", "?"},
+        {"prot3w", k_prot3w, 64, "instr", "?"},
+        {"plzcw", k_plzcw, 64, "instr", "?"},
+        {"pmultw rd", k_pmultw, 64, "instr", "?"},
+        {"pmulth rd", k_pmulth, 64, "instr", "?"},
+        {"pmultw+pmflo", k_pmultw_pmflo, 64, "2instr", "?"},
+        {"mult rd (3-op)", k_mult3, 64, "instr", "?"},
+        {"mult1 rd (3-op)", k_mult1_3, 64, "instr", "?"},
+        {"lq (hit)", k_lq, 64, "instr", "?"},
+        {"psubw", k_psubw, 64, "instr", "?"},
+        {"por", k_por, 64, "instr", "?"},
+        {"pxor", k_pxor, 64, "instr", "?"},
+        {"pnor", k_pnor, 64, "instr", "?"},
+        {"paddb", k_paddb, 64, "instr", "?"},
+        {"paddh", k_paddh, 64, "instr", "?"},
+        {"pceqw", k_pceqw, 64, "instr", "?"},
+        {"pminw", k_pminw, 64, "instr", "?"},
+        {"pminh", k_pminh, 64, "instr", "?"},
+        {"paddsw", k_paddsw, 64, "instr", "?"},
+        {"paddub", k_paddub, 64, "instr", "?"},
+        {"psubuh", k_psubuh, 64, "instr", "?"},
+        {"psubuw", k_psubuw, 64, "instr", "?"},
+        {"pabsw", k_pabsw, 64, "instr", "?"},
+        {"pabsh", k_pabsh, 64, "instr", "?"},
+        {"psrlw", k_psrlw, 64, "instr", "?"},
+        {"psraw", k_psraw, 64, "instr", "?"},
+        {"psrah", k_psrah, 64, "instr", "?"},
+        {"psllh", k_psllh, 64, "instr", "?"},
+    };
+    static const uarch_test mmi_use[] = {
+        {"lq->paddw", k_lq_paddw, 64, "rep", "= latency"},
+        {"lq->addu", k_lq_addu, 64, "rep", "= latency"},
+        {"paddw->addu", k_paddw_addu, 64, "rep", "= latency"},
+        {"addu->paddw", k_addu_paddw, 64, "rep", "= latency"},
+        {"paddw->sq", k_paddw_sq, 64, "rep", "= latency"},
+        {"psllw->paddw", k_psllw_paddw, 64, "rep", "= latency"},
+        {"pcpyud->addu", k_pcpyud_addu, 64, "rep", "= latency"},
+        {"pmultw->paddw", k_pmultw_paddw, 64, "rep", "= latency"},
+        {"mult rd->addu", k_mult3_addu, 64, "rep", "= latency"},
+    };
+    static const uarch_test mmi_mem[] = {
+        {"sw->lw", k_sw_lw, 64, "rep", "store + load"},
+        {"sq->lq", k_sq_lq, 64, "rep", "store + load"},
+        {"sq->lw", k_sq_lw, 64, "rep", "store + load"},
+        {"sq->ld", k_sq_ld, 64, "rep", "store + load"},
+        {"sw->lq", k_sw_lq, 64, "rep", "store + load"},
+        {"2 sd->lq", k_sd2_lq, 64, "rep", "stores + load"},
+        {"4 sw->lq", k_sw4_lq, 64, "rep", "stores + load (splat)"},
+        {"uload via stack", k_uload_stack, 16, "seq", "ldl/ldr x2, sd x2, lq, use"},
+        {"uload via pcpyld", k_uload_pcpyld, 16, "seq", "ldl/ldr x2, pcpyld, use"},
+        {"ustore via stack", k_ustore_stack, 16, "seq", "def, sq, ld x2, sdl/sdr x2"},
+        {"ustore via pcpyud", k_ustore_pcpyud, 16, "seq", "def, pcpyud, sdl/sdr x2"},
+    };
+    static const uarch_test mmi_pair[] = {
+        {"paddw|paddw", k_paddw_paddw, 64, "pair", "1 = paired"},
+        {"paddw|addu", k_paddw_addu2, 64, "pair", "1 = paired"},
+        {"addu|paddw", k_addu_paddw2, 64, "pair", "1 = paired"},
+        {"paddw|lw", k_paddw_lw, 64, "pair", "1 = paired"},
+        {"paddw|lq", k_paddw_lq, 64, "pair", "1 = paired"},
+        {"paddw|sq", k_paddw_sq2, 64, "pair", "1 = paired"},
+        {"lq|lq", k_lq_lq, 64, "pair", "1 = paired"},
+        {"sq|sq", k_sq_sq, 64, "pair", "1 = paired"},
+        {"psllw|paddw", k_psllw_paddw2, 64, "pair", "1 = paired"},
+        {"psllw|addu", k_psllw_addu, 64, "pair", "1 = paired"},
+        {"pcpyld|paddw", k_pcpyld_paddw, 64, "pair", "1 = paired"},
+        {"paddw|plzcw", k_paddw_plzcw, 64, "pair", "1 = paired"},
+        {"paddw|mult1", k_paddw_mult1, 64, "pair", "1 = paired"},
+        {"pmultw|addu", k_pmultw_addu, 64, "pair", "1 = paired"},
+        {"pmultw", k_pmultw_x1, 64, "instr", "throughput"},
+        {"mult (3-op)", k_mult3_x1, 64, "instr", "throughput"},
+        {"mult|mult1", k_mult3_mult1, 64, "pair", "throughput of both"},
+        {"mult|addu", k_mult3_addu2, 64, "pair", "1 = paired"},
+        {"pmflo|addu", k_pmflo_addu, 64, "pair", "1 = paired"},
+        {"pmfhi|lw", k_pmfhi_lw, 64, "pair", "1 = paired"},
+        {"pabsw|addu", k_pabsw_addu, 64, "pair", "1 = paired"},
+        {"psrlw|lw", k_psrlw_lw, 64, "pair", "1 = paired"},
+    };
+    static const uarch_test scale[] = {
+        {"scalar", k_scale_scalar, 1, "line", "lw, sll, addu, addiu, sw"},
+        {"mmi aligned", k_scale_mmi, 1, "line", "lq, psllw, paddw x2, sq"},
+        {"mmi unaligned", k_scale_mmi_u, 1, "line", "via pcpyld/pcpyud"},
+    };
+    static u32 sbuf[32] __attribute__((aligned(64)));
+
+    printf("--- MMI latency (dependent chains) ---\n");
+    for (unsigned i = 0; i < sizeof(mmi_lat) / sizeof(mmi_lat[0]); i++)
+        print_line(mmi_lat[i].name,
+                   run(mmi_lat[i].fn, buf, LAT_ITERS, mmi_lat[i].reps),
+                   mmi_lat[i].unit, mmi_lat[i].expect);
+
+    printf("--- MMI latency to consumer ---\n");
+    for (unsigned i = 0; i < sizeof(mmi_use) / sizeof(mmi_use[0]); i++)
+        print_line(mmi_use[i].name,
+                   run(mmi_use[i].fn, buf, LAT_ITERS, mmi_use[i].reps),
+                   mmi_use[i].unit, mmi_use[i].expect);
+
+    printf("--- Memory round trips, unaligned 128-bit access ---\n");
+    for (unsigned i = 0; i < sizeof(mmi_mem) / sizeof(mmi_mem[0]); i++)
+        print_line(mmi_mem[i].name,
+                   run(mmi_mem[i].fn, buf, LAT_ITERS, mmi_mem[i].reps),
+                   mmi_mem[i].unit, mmi_mem[i].expect);
+
+    printf("--- MMI pairing and throughput ---\n");
+    for (unsigned i = 0; i < sizeof(mmi_pair) / sizeof(mmi_pair[0]); i++)
+        print_line(mmi_pair[i].name,
+                   run(mmi_pair[i].fn, buf, LAT_ITERS, mmi_pair[i].reps),
+                   mmi_pair[i].unit, mmi_pair[i].expect);
+
+    printf("--- out = in * 3 + 1, one line in cache ---\n");
+    for (unsigned i = 0; i < sizeof(scale) / sizeof(scale[0]); i++)
+        print_line(scale[i].name,
+                   run(scale[i].fn, sbuf, LAT_ITERS, scale[i].reps),
+                   scale[i].unit, scale[i].expect);
 
     // Memory: one line per 16 words, much larger than the 8KB data cache
     int lines = big_words / 16;
