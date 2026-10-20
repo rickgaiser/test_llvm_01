@@ -133,6 +133,50 @@ KERNEL(k_stream_use0, 1, "move $8, %3\n" "move $25, $0\n",
 KERNEL(k_stream_use8, 1, "move $8, %3\n" "move $25, $0\n",
        LW8(0) ADD8 LW8(32) ADD8 "addiu $8, $8, 64\n")
 
+// Prefetch placement: 4 lines (256 bytes) ahead, at the top of the line, after
+// its first load, or at the end
+#define PREF "pref 0, 256($8)\n"
+#define LWADD15                                                         \
+    LWADD(4) LWADD(8) LWADD(12) LWADD(16) LWADD(20) LWADD(24) LWADD(28)     \
+    LWADD(32) LWADD(36) LWADD(40) LWADD(44) LWADD(48) LWADD(52) LWADD(56)   \
+    LWADD(60)
+#define STREAM_SETUP "move $8, %3\n" "move $25, $0\n"
+KERNEL(k_pf_top_use0, 1, STREAM_SETUP,
+       PREF LWADD(0) LWADD15 "addiu $8, $8, 64\n")
+KERNEL(k_pf_first_use0, 1, STREAM_SETUP,
+       LWADD(0) PREF LWADD15 "addiu $8, $8, 64\n")
+KERNEL(k_pf_end_use0, 1, STREAM_SETUP,
+       LWADD(0) LWADD15 PREF "addiu $8, $8, 64\n")
+
+#define LW7                                                         \
+    "lw $10, 4($8)\n" "lw $11, 8($8)\n" "lw $12, 12($8)\n"           \
+    "lw $13, 16($8)\n" "lw $14, 20($8)\n" "lw $15, 24($8)\n"         \
+    "lw $24, 28($8)\n"
+KERNEL(k_pf_top_use8, 1, STREAM_SETUP,
+       PREF LW8(0) ADD8 LW8(32) ADD8 "addiu $8, $8, 64\n")
+KERNEL(k_pf_first_use8, 1, STREAM_SETUP,
+       "lw $9, 0($8)\n" PREF LW7 ADD8 LW8(32) ADD8 "addiu $8, $8, 64\n")
+KERNEL(k_pf_end_use8, 1, STREAM_SETUP,
+       LW8(0) ADD8 LW8(32) ADD8 PREF "addiu $8, $8, 64\n")
+
+// Overlapping misses: $8 walks the first half of the buffer, $11 the second
+#define HALVES_SETUP "move $8, %3\n" "lui $11, 8\n" "addu $11, $11, %3\n"
+// One miss per iteration
+KERNEL(k_miss1, 1, HALVES_SETUP,
+       "lw $9, 0($8)\n" "addu $25, $25, $9\n" "addiu $8, $8, 64\n")
+// Two misses to different lines, both used afterwards
+KERNEL(k_miss2, 1, HALVES_SETUP,
+       "lw $9, 0($8)\n" "lw $10, 0($11)\n" "addu $25, $25, $9\n"
+       "addu $25, $25, $10\n" "addiu $8, $8, 64\n" "addiu $11, $11, 64\n")
+// A prefetch miss, then a load miss to a different line
+KERNEL(k_pf_miss, 1, HALVES_SETUP,
+       "pref 0, 0($11)\n" "lw $9, 0($8)\n" "addu $25, $25, $9\n"
+       "addiu $8, $8, 64\n" "addiu $11, $11, 64\n")
+// A load miss, then a prefetch miss to a different line
+KERNEL(k_miss_pf, 1, HALVES_SETUP,
+       "lw $9, 0($8)\n" "pref 0, 0($11)\n" "addu $25, $25, $9\n"
+       "addiu $8, $8, 64\n" "addiu $11, $11, 64\n")
+
 typedef u32 (*kernel_fn)(u32 *p, int iters);
 
 typedef struct {
@@ -237,5 +281,27 @@ void uarch_run_all(u32 *big, int big_words) {
                "use right after load");
     print_line("stream 8 lw,8 use", run(k_stream_use8, big, lines, 1), "line",
                "use 8 loads later");
+    printf("--- Prefetch 256 bytes ahead (cyc/line) ---\n");
+    print_line("pf top, lw,use", run(k_pf_top_use0, big, lines, 1), "line",
+               "pref before the line's loads");
+    print_line("pf first, lw,use", run(k_pf_first_use0, big, lines, 1), "line",
+               "pref after the first load");
+    print_line("pf end, lw,use", run(k_pf_end_use0, big, lines, 1), "line",
+               "pref after the line's loads");
+    print_line("pf top, 8 lw,8 use", run(k_pf_top_use8, big, lines, 1), "line",
+               "pref before the line's loads");
+    print_line("pf first, 8 lw,8 use", run(k_pf_first_use8, big, lines, 1),
+               "line", "pref after the first load");
+    print_line("pf end, 8 lw,8 use", run(k_pf_end_use8, big, lines, 1), "line",
+               "pref after the line's loads");
+    printf("--- Overlapping misses (cyc/iteration) ---\n");
+    print_line("1 miss", run(k_miss1, big, lines / 2, 1), "iter",
+               "one load miss");
+    print_line("2 misses", run(k_miss2, big, lines / 2, 1), "iter",
+               "= 1 miss: overlap, 2x: serialized");
+    print_line("pref miss, lw miss", run(k_pf_miss, big, lines / 2, 1), "iter",
+               "= 1 miss: overlap");
+    print_line("lw miss, pref miss", run(k_miss_pf, big, lines / 2, 1), "iter",
+               "= 1 miss: overlap");
     printf("\n");
 }
