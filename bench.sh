@@ -7,7 +7,7 @@
 #   ./bench.sh run     <variant>      run on the PS2 and save the log (PS2 must be freshly booted)
 #   ./bench.sh report                 results table from the saved logs
 #
-# Variants: gcc upstream pr feature
+# Variants: gcc upstream pr feature feature-vu0 (feature with -mvu0)
 # Output:   toolchain/build/bench/<variant>/{*.o,*.s,test.elf,run.log}
 
 set -e
@@ -16,7 +16,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 BUILD_ROOT=$(cd "$HERE/../../../build" && pwd)
 OUT_ROOT=$BUILD_ROOT/bench
 PS2_IP=${PS2_IP:-192.168.1.10}
-ALL_VARIANTS="gcc upstream pr feature"
+ALL_VARIANTS="gcc upstream pr feature feature-vu0"
 
 export PS2DEV=${PS2DEV:-/home/rgaiser/dev/ps2max/install}
 export PS2SDK=${PS2SDK:-$PS2DEV/ps2sdk}
@@ -24,8 +24,15 @@ export PS2SDK=${PS2SDK:-$PS2DEV/ps2sdk}
 # Build directory of the clang used for a variant
 clang_dir() {
   case "$1" in
-    feature) echo "$BUILD_ROOT/llvm" ;;
+    feature|feature-vu0) echo "$BUILD_ROOT/llvm" ;;
     pr|upstream) echo "$BUILD_ROOT/llvm-$1" ;;
+  esac
+}
+
+# Extra compiler flags of a variant
+variant_cflags() {
+  case "$1" in
+    feature-vu0) echo "-mvu0" ;;
   esac
 }
 
@@ -56,7 +63,8 @@ cmd_build() {
         continue
       fi
       mkdir -p "$OUT_ROOT"
-      make -s -C "$HERE" COMPILER=clang CLANG="$clang" OUT="$out" > "$OUT_ROOT/$v.build.log" 2>&1 || true
+      make -s -C "$HERE" COMPILER=clang CLANG="$clang" OUT="$out" \
+        EXTRA_CFLAGS="$(variant_cflags "$v")" > "$OUT_ROOT/$v.build.log" 2>&1 || true
     fi
     if [ -f "$out/test.elf" ]; then
       echo "$v: OK ($out/test.elf)"
@@ -168,9 +176,10 @@ report_table() {
   [ -f "$OUT_ROOT/gcc/run.log" ] && for v in $present; do [ "$v" != gcc ] && printf -- "---:|"; done
   echo
 
-  local first
-  first=$(echo $present | awk '{ print $1 }')
-  summary "$OUT_ROOT/$first/run.log" | while IFS='|' read -r key _ unit; do
+  # The rows of all variants, in order of appearance: some tests only run
+  # with VU0
+  for v in $present; do summary "$OUT_ROOT/$v/run.log"; done |
+    awk -F'|' '!seen[$1]++' | while IFS='|' read -r key _ unit; do
     printf "| %s (%s) |" "$key" "$unit"
     local gccval="" val
     [ -f "$OUT_ROOT/gcc/run.log" ] && gccval=$(summary "$OUT_ROOT/gcc/run.log" | awk -F'|' -v k="$key" '$1 == k { print $2 }')

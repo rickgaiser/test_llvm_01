@@ -35,10 +35,13 @@ Results of both clang variants match gcc.
 ## Usage
 
 ```sh
-./bench.sh build [variant...]   # gcc upstream pr feature -> toolchain/build/bench/<variant>/
+./bench.sh build [variant...]   # gcc upstream pr feature feature-vu0 -> toolchain/build/bench/<variant>/
 ./bench.sh codegen              # code size per function per variant
 ./bench.sh run <variant>        # run on the PS2 (192.168.1.10), saves run.log
 ./bench.sh report               # results table from the saved run logs
 ```
+
+feature-vu0 is the feature clang with `-mvu0`: v4f32 is then a VU0 (COP2) vector type,
+and `__mips_vu0` enables the VU0 inline asm tests.
 
 Generated assembly is in `toolchain/build/bench/<variant>/*.s`.
