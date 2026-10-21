@@ -194,6 +194,8 @@ KERNEL(k_st_line_sq, 1, "move $8, %3\n",
 #define PAND(d, s, t) R3(0x70000489, d, s, t)
 #define PEXTLW(d, s, t) R3(0x70000488, d, s, t)
 #define PPACW(d, s, t) R3(0x700004c8, d, s, t)
+#define PPACH(d, s, t) R3(0x700005c8, d, s, t)
+#define PPACB(d, s, t) R3(0x700006c8, d, s, t)
 #define PCPYLD(d, s, t) R3(0x70000389, d, s, t)
 #define PCPYUD(d, s, t) R3(0x700003a9, d, s, t)
 #define PMULTW(d, s, t) R3(0x70000309, d, s, t)
@@ -237,6 +239,8 @@ KERNEL(k_pand, 64, MMI_SETUP, PAND(9, 9, 10))
 KERNEL(k_psllw, 64, MMI_SETUP, PSLLW(9, 9, 1))
 KERNEL(k_pextlw, 64, MMI_SETUP, PEXTLW(9, 9, 10))
 KERNEL(k_ppacw, 64, MMI_SETUP, PPACW(9, 9, 10))
+KERNEL(k_ppach, 64, MMI_SETUP, PPACH(9, 9, 10))
+KERNEL(k_ppacb, 64, MMI_SETUP, PPACB(9, 9, 10))
 KERNEL(k_pcpyld, 64, MMI_SETUP, PCPYLD(9, 9, 10))
 KERNEL(k_pcpyud, 64, MMI_SETUP, PCPYUD(9, 9, 10))
 KERNEL(k_pexew, 64, MMI_SETUP, PEXEW(9, 9))
@@ -1130,6 +1134,8 @@ void uarch_run_all(u32 *big, int big_words) {
         {"psllw", k_psllw, 64, "instr", "?"},
         {"pextlw", k_pextlw, 64, "instr", "?"},
         {"ppacw", k_ppacw, 64, "instr", "?"},
+        {"ppach", k_ppach, 64, "instr", "?"},
+        {"ppacb", k_ppacb, 64, "instr", "?"},
         {"pcpyld", k_pcpyld, 64, "instr", "?"},
         {"pcpyud", k_pcpyud, 64, "instr", "?"},
         {"pexew", k_pexew, 64, "instr", "?"},
