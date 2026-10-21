@@ -722,6 +722,61 @@ KERNEL(k_vadd_lw, 64, VU0_SETUP, VADD_3 "lw $10, 0($24)\n")
 KERNEL(k_vadd_lqc2, 64, VU0_SETUP, VADD_3 LQC2_7)
 KERNEL(k_vadd_mul_s, 64, VU0_SETUP, VADD_3 "mul.s $f0, $f8, $f9\n")
 KERNEL(k_vadd_paddw, 64, VU0_SETUP, VADD_3 PADDW(9, 12, 13))
+// Data movement between VU0, the GPRs and memory, and the conversions
+#define LQC2_8 W(0xdb080010)        // lqc2 $vf8, 16($24)
+#define SQC2_4 W(0xfb040030)        // sqc2 $vf4, 48($24)
+#define QMTC2_9_7 W(0x48a93800)     // qmtc2 $9, $vf7
+#define QMTC2_10_8 W(0x48aa4000)    // qmtc2 $10, $vf8
+#define QMFC2_10_5 W(0x482a2800)    // qmfc2 $10, $vf5
+#define QMFC2_11_6 W(0x482b3000)    // qmfc2 $11, $vf6
+#define VFTOI0_1 W(0x4be1097c)      // vftoi0.xyzw $vf1, $vf1
+#define VITOF0_1 W(0x4be1093c)      // vitof0.xyzw $vf1, $vf1
+#define VFTOI0_3 W(0x4be3297c)      // vftoi0.xyzw $vf3, $vf5
+#define VFTOI0_4 W(0x4be4317c)      // vftoi0.xyzw $vf4, $vf6
+#define VMR32_1 W(0x4be10b3d)       // vmr32.xyzw $vf1, $vf1
+KERNEL(k_lqc2_lqc2, 64, VU0_SETUP, LQC2_7 LQC2_8)
+KERNEL(k_sqc2_sqc2, 64, VU0_SETUP, SQC2_3 SQC2_4)
+KERNEL(k_lqc2_sqc2, 64, VU0_SETUP, LQC2_7 SQC2_4)
+KERNEL(k_lqc2_addu, 64, VU0_SETUP, LQC2_7 "addu $12, $13, $14\n")
+KERNEL(k_lqc2_lw, 64, VU0_SETUP, LQC2_7 "lw $12, 0($24)\n")
+KERNEL(k_qmtc2_qmtc2, 64, VU0_SETUP, QMTC2_9_7 QMTC2_10_8)
+KERNEL(k_qmfc2_qmfc2, 64, VU0_SETUP, QMFC2_10_5 QMFC2_11_6)
+KERNEL(k_qmtc2_addu, 64, VU0_SETUP, QMTC2_9_7 "addu $12, $13, $14\n")
+KERNEL(k_qmtc2_lw, 64, VU0_SETUP, QMTC2_9_7 "lw $12, 0($24)\n")
+KERNEL(k_qmfc2_addu, 64, VU0_SETUP, QMFC2_10_5 "addu $12, $13, $14\n")
+KERNEL(k_qmfc2_lw, 64, VU0_SETUP, QMFC2_10_5 "lw $12, 0($24)\n")
+KERNEL(k_qmfc2_mtc1, 64, VU0_SETUP, QMFC2_10_5 "mtc1 $12, $f4\n")
+KERNEL(k_qmfc2_paddw, 64, VU0_SETUP, QMFC2_10_5 PADDW(12, 13, 14))
+KERNEL(k_vadd_qmfc2_ind, 64, VU0_SETUP, VADD_3 QMFC2_10_5)
+KERNEL(k_vadd_qmtc2_ind, 64, VU0_SETUP, VADD_3 QMTC2_9_7)
+KERNEL(k_vftoi0_vftoi0, 64, VU0_SETUP, VFTOI0_3 VFTOI0_4)
+// Producer and consumer, independent between repetitions: = latency
+KERNEL(k_qmfc2_use, 64, VU0_SETUP, QMFC2_10_5 "addu $11, $10, $12\n")
+KERNEL(k_qmfc2_mtc1_use, 64, VU0_SETUP,
+       QMFC2_10_5 "mtc1 $10, $f4\n" "add.s $f5, $f4, $f8\n")
+KERNEL(k_qmfc2_pcpyud_mtc1, 64, VU0_SETUP,
+       QMFC2_10_5 PCPYUD(11, 10, 10) "mtc1 $11, $f4\n")
+KERNEL(k_pextlw_qmtc2_vadd, 64, VU0_SETUP,
+       PEXTLW(9, 12, 13) QMTC2_9_1 VADD_2_1)
+KERNEL(k_sqc2_lw_use, 64, VU0_SETUP,
+       SQC2_3 "lw $10, 32($24)\n" "addu $11, $10, $12\n")
+#define LQC2_1_32 W(0xdb010020)     // lqc2 $vf1, 32($24)
+KERNEL(k_sw_lqc2_vadd, 64, VU0_SETUP, "sw $12, 32($24)\n" LQC2_1_32 VADD_2_1)
+KERNEL(k_sw4_lqc2_vadd, 64, VU0_SETUP,
+       "sw $12, 32($24)\n" "sw $12, 36($24)\n" "sw $12, 40($24)\n"
+       "sw $12, 44($24)\n" LQC2_1_32 VADD_2_1)
+// An unaligned v4f32 load through the GPRs, to a use
+KERNEL(k_uload_qmtc2_vadd, 64, VU0_SETUP,
+       "ldl $9, 11($24)\n" "ldr $9, 4($24)\n" "ldl $10, 19($24)\n"
+       "ldr $10, 12($24)\n" PCPYLD(9, 10, 9) QMTC2_9_1 VADD_2_1)
+// The same through a stack temporary, as now
+KERNEL(k_uload_stack_vadd, 64, VU0_SETUP,
+       "ldl $9, 11($24)\n" "ldr $9, 4($24)\n" "sd $9, 32($24)\n"
+       "ldl $10, 19($24)\n" "ldr $10, 12($24)\n" "sd $10, 40($24)\n"
+       LQC2_1_32 VADD_2_1)
+// Conversion and shuffle chains: = latency
+KERNEL(k_vftoi0_vitof0, 64, VU0_SETUP, VFTOI0_1 VITOF0_1)
+KERNEL(k_vmr32, 64, VU0_SETUP, VMR32_1)
 
 // STREAM Sum loop bodies: each load is followed by the add of the load LAG
 // loads before it (the compiler emits LAG 2 without and LAG 1 with partial
@@ -1622,6 +1677,34 @@ void uarch_run_all(u32 *big, int big_words) {
         {"vadd|lqc2", k_vadd_lqc2, 64, "pair", "1 = paired"},
         {"vadd|mul.s", k_vadd_mul_s, 64, "pair", "1 = paired"},
         {"vadd|paddw", k_vadd_paddw, 64, "pair", "1 = paired"},
+        {"lqc2|lqc2", k_lqc2_lqc2, 64, "pair", "1 = paired"},
+        {"sqc2|sqc2", k_sqc2_sqc2, 64, "pair", "1 = paired"},
+        {"lqc2|sqc2", k_lqc2_sqc2, 64, "pair", "1 = paired"},
+        {"lqc2|addu", k_lqc2_addu, 64, "pair", "1 = paired"},
+        {"lqc2|lw", k_lqc2_lw, 64, "pair", "1 = paired"},
+        {"qmtc2|qmtc2", k_qmtc2_qmtc2, 64, "pair", "1 = paired"},
+        {"qmfc2|qmfc2", k_qmfc2_qmfc2, 64, "pair", "1 = paired"},
+        {"qmtc2|addu", k_qmtc2_addu, 64, "pair", "1 = paired"},
+        {"qmtc2|lw", k_qmtc2_lw, 64, "pair", "1 = paired"},
+        {"qmfc2|addu", k_qmfc2_addu, 64, "pair", "1 = paired"},
+        {"qmfc2|lw", k_qmfc2_lw, 64, "pair", "1 = paired"},
+        {"qmfc2|mtc1", k_qmfc2_mtc1, 64, "pair", "1 = paired"},
+        {"qmfc2|paddw", k_qmfc2_paddw, 64, "pair", "1 = paired"},
+        {"vadd|qmfc2 (indep)", k_vadd_qmfc2_ind, 64, "pair", "1 = paired"},
+        {"vadd|qmtc2 (indep)", k_vadd_qmtc2_ind, 64, "pair", "1 = paired"},
+        {"vftoi0|vftoi0", k_vftoi0_vftoi0, 64, "pair", "1 = paired"},
+        {"qmfc2->addu", k_qmfc2_use, 64, "rep", "= latency"},
+        {"qmfc2->mtc1->add.s", k_qmfc2_mtc1_use, 64, "rep", "= latency"},
+        {"qmfc2,pcpyud,mtc1", k_qmfc2_pcpyud_mtc1, 64, "rep", "= latency"},
+        {"pextlw->qmtc2->vadd", k_pextlw_qmtc2_vadd, 64, "rep", "= latency"},
+        {"sqc2->lw->addu", k_sqc2_lw_use, 64, "rep", "= latency"},
+        {"sw->lqc2->vadd", k_sw_lqc2_vadd, 64, "rep", "= latency"},
+        {"4 sw->lqc2->vadd", k_sw4_lqc2_vadd, 64, "rep", "= latency"},
+        {"uload ldl/ldr,pcpyld,qmtc2", k_uload_qmtc2_vadd, 64, "rep",
+         "to vadd"},
+        {"uload via stack, lqc2", k_uload_stack_vadd, 64, "rep", "to vadd"},
+        {"vftoi0+vitof0", k_vftoi0_vitof0, 64, "2instr", "?"},
+        {"vmr32", k_vmr32, 64, "instr", "?"},
     };
 
     run_table("Divide, multiply-add, HI/LO, SA, ldl/ldr", intx,
