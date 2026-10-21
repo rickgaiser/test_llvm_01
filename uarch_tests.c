@@ -477,6 +477,157 @@ KERNEL(k_mult1_sw_x1, 64, MMI_SETUP,
        "addu $14, $12, $13\n")
 KERNEL(k_mflo1_x1, 64, MMI_SETUP, MFLO1_9)
 KERNEL(k_mflo1_addu, 64, MMI_SETUP, MFLO1_9 "addu $11, $12, $13\n")
+// Which loads collide with the MULT1 result write: a load 3 or 4 cycles after
+// MULT1, and MULT1 with a pipe 0 MULT after it in the same pair.
+#define ADDU2 "addu $11, $12, $13\n" "addu $9, $12, $13\n"
+KERNEL(k_mult1_lw_3, 64, MMI_SETUP,
+       MULT1(10, 12, 13) "addu $11, $12, $13\n" ADDU2 ADDU2
+       "lw $15, 0($24)\n" "addu $25, $12, $13\n")
+KERNEL(k_mult1_lw_4, 64, MMI_SETUP,
+       MULT1(10, 12, 13) "addu $11, $12, $13\n" ADDU2 ADDU2 ADDU2
+       "lw $15, 0($24)\n" "addu $25, $12, $13\n")
+KERNEL(k_mult1_mult3, 64, MMI_SETUP, MULT1(10, 12, 13) MULT3(9, 12, 13))
+KERNEL(k_mult1_x1, 64, MMI_SETUP, MULT1(10, 12, 13))
+KERNEL(k_mult1_sw_2, 64, MMI_SETUP,
+       MULT1(10, 12, 13) "addu $11, $12, $13\n" ADDU2
+       "sw $12, 0($24)\n" "addu $25, $12, $13\n")
+// A multiply loop step of 2 loads, 3 multiplies and 3 ALU operations: with
+// MULTs only the pipe 0 multiplier needs 6 cycles, with one MULT1 (paired
+// with an ALU operation) the step fits in 4.
+KERNEL(k_mloop_mult, 16, MMI_SETUP,
+       "lw $8, 0($24)\n" MULT3(10, 12, 13) "addu $11, $12, $13\n"
+       MULT3(9, 12, 13) "lw $15, 4($24)\n" MULT3(14, 12, 13)
+       "addu $25, $12, $13\n" "addu $11, $12, $13\n")
+KERNEL(k_mloop_mult1, 16, MMI_SETUP,
+       "lw $8, 0($24)\n" MULT3(10, 12, 13) MULT1(9, 12, 13)
+       "addu $11, $12, $13\n" "lw $15, 4($24)\n" MULT3(14, 12, 13)
+       "addu $25, $12, $13\n" "addu $11, $12, $13\n")
+// Without loads: 3 multiplies and 3 ALU operations, all MULT (6 cycles) or
+// one MULT1 (4 cycles if MULT1 only uses its own multiplier).
+KERNEL(k_m3_mult, 16, MMI_SETUP,
+       MULT3(10, 12, 13) "addu $11, $12, $13\n" MULT3(9, 12, 13)
+       "addu $25, $12, $13\n" MULT3(14, 12, 13) "addu $15, $12, $13\n")
+KERNEL(k_m3_mult1, 16, MMI_SETUP,
+       MULT3(10, 12, 13) "addu $11, $12, $13\n" MULT1(9, 12, 13)
+       "addu $25, $12, $13\n" MULT3(14, 12, 13) "addu $15, $12, $13\n")
+// MULT one cycle after MULT1: (mult1|addu)(mult|addu)
+KERNEL(k_mult1_then_mult, 64, MMI_SETUP,
+       MULT1(9, 12, 13) "addu $11, $12, $13\n" MULT3(10, 12, 13)
+       "addu $25, $12, $13\n")
+// A load 5 and 6 cycles after MULT1, and two loads 2 and 3 cycles after it.
+KERNEL(k_mult1_lw_5, 64, MMI_SETUP,
+       MULT1(10, 12, 13) "addu $11, $12, $13\n" ADDU2 ADDU2 ADDU2 ADDU2
+       "lw $15, 0($24)\n" "addu $25, $12, $13\n")
+KERNEL(k_mult1_lw_6, 64, MMI_SETUP,
+       MULT1(10, 12, 13) "addu $11, $12, $13\n" ADDU2 ADDU2 ADDU2 ADDU2
+       ADDU2 "lw $15, 0($24)\n" "addu $25, $12, $13\n")
+KERNEL(k_mult1_lw_23, 64, MMI_SETUP,
+       MULT1(10, 12, 13) "addu $11, $12, $13\n" ADDU2
+       "lw $15, 0($24)\n" "addu $25, $12, $13\n"
+       "lw $14, 4($24)\n" "addu $25, $12, $13\n")
+// Variants of (lw|mult)(mult1|addu)(lw|mult)(addu|addu), 6.19 cycles, to find
+// what MULT1 costs there.
+#define V_MUL1 MULT1(9, 12, 13)
+#define V_MUL1Z MULT1_ACC_12
+#define V_LW1 "lw $8, 0($24)\n"
+#define V_LW2 "lw $15, 4($24)\n"
+#define V_SW1 "sw $12, 0($24)\n"
+#define V_SW2 "sw $13, 4($24)\n"
+#define V_ADD "addu $25, $12, $13\n"
+#define V_STEP(a, m1, b)                                                   \
+    a MULT3(10, 12, 13) m1 "addu $11, $12, $13\n" b MULT3(14, 12, 13)     \
+    V_ADD "addu $11, $12, $13\n"
+KERNEL(k_v_base, 16, MMI_SETUP, V_STEP(V_LW1, V_MUL1, V_LW2))
+KERNEL(k_v_zero, 16, MMI_SETUP, V_STEP(V_LW1, V_MUL1Z, V_LW2))
+KERNEL(k_v_nolw2, 16, MMI_SETUP, V_STEP(V_LW1, V_MUL1, V_ADD))
+KERNEL(k_v_nolw1, 16, MMI_SETUP, V_STEP(V_ADD, V_MUL1, V_LW2))
+KERNEL(k_v_nolw, 16, MMI_SETUP, V_STEP(V_ADD, V_MUL1, V_ADD))
+KERNEL(k_v_sw, 16, MMI_SETUP, V_STEP(V_SW1, V_MUL1, V_SW2))
+KERNEL(k_v_mult, 16, MMI_SETUP, V_STEP(V_LW1, MULT3(9, 12, 13), V_LW2))
+// The same with the multiplies in slot 0: (mult|lw)(mult1|addu)(mult|lw)
+KERNEL(k_v_swap, 16, MMI_SETUP,
+       MULT3(10, 12, 13) V_LW1 V_MUL1 "addu $11, $12, $13\n"
+       MULT3(14, 12, 13) V_LW2 V_ADD "addu $11, $12, $13\n")
+// Arrangements of 2 MULTs and a MULT1 with ALU operations (M = mult,
+// 1 = mult1, a = addu), one pair per parenthesis.
+#define S_M0 MULT3(10, 12, 13)
+#define S_M1 MULT3(14, 12, 13)
+#define S_1 MULT1(9, 12, 13)
+#define S_A "addu $11, $12, $13\n"
+#define S_B "addu $25, $12, $13\n"
+#define S_C "addu $15, $12, $13\n"
+KERNEL(k_s1, 16, MMI_SETUP, S_M0 S_A S_1 S_B S_M1 S_C S_A S_B)
+KERNEL(k_s2, 16, MMI_SETUP, S_A S_M0 S_1 S_B S_C S_M1)
+KERNEL(k_s3, 16, MMI_SETUP, S_M0 S_A S_1 S_B S_A S_C S_M1 S_B)
+KERNEL(k_s4, 16, MMI_SETUP, S_1 S_A S_M0 S_B S_A S_C S_M1 S_B)
+KERNEL(k_s5, 16, MMI_SETUP, S_M0 S_A S_B S_C S_1 S_A S_M1 S_B)
+KERNEL(k_s6, 16, MMI_SETUP, S_M0 S_A MULT1_ACC_12 S_B S_M1 S_C)
+KERNEL(k_s7, 64, MMI_SETUP, S_M0 S_A S_1 S_B)
+KERNEL(k_s8, 16, MMI_SETUP, S_M0 S_A S_B S_C S_1 S_A S_B S_C)
+// Probe grid: a multiply, then pairs that write no GPR in pipe 1 (addu in pipe
+// 0 with a store), with one probe pair d pairs after the multiply; 8 pairs
+// per rep, so 8 cycles means no stall.
+#define G_F "addu $11, $12, $13\n" "sw $12, 32($24)\n"
+#define G_LW "addu $25, $12, $13\n" "lw $15, 0($24)\n"
+#define G_AA "addu $25, $12, $13\n" "addu $15, $12, $13\n"
+#define G_P0 "addu $25, $12, $13\n" "lw $15, 0($24)\n"
+#define G_F1 G_F
+#define G_F2 G_F G_F
+#define G_F3 G_F2 G_F
+#define G_F4 G_F2 G_F2
+#define G_F5 G_F4 G_F
+#define G_F6 G_F4 G_F2
+#define G_M1 MULT1(10, 12, 13) "addu $14, $12, $13\n"
+#define G_M0 MULT3(10, 12, 13) "sw $13, 36($24)\n"
+KERNEL(k_g1_lw1, 16, MMI_SETUP, G_M1 G_LW G_F6)
+KERNEL(k_g1_aa1, 16, MMI_SETUP, G_M1 G_AA G_F6)
+KERNEL(k_g1_lw2, 16, MMI_SETUP, G_M1 G_F1 G_LW G_F5)
+KERNEL(k_g1_aa2, 16, MMI_SETUP, G_M1 G_F1 G_AA G_F5)
+KERNEL(k_g1_lw3, 16, MMI_SETUP, G_M1 G_F2 G_LW G_F4)
+KERNEL(k_g1_aa3, 16, MMI_SETUP, G_M1 G_F2 G_AA G_F4)
+KERNEL(k_g1_lw4, 16, MMI_SETUP, G_M1 G_F3 G_LW G_F3)
+KERNEL(k_g1_aa4, 16, MMI_SETUP, G_M1 G_F3 G_AA G_F3)
+KERNEL(k_g1_lw5, 16, MMI_SETUP, G_M1 G_F4 G_LW G_F2)
+KERNEL(k_g1_aa5, 16, MMI_SETUP, G_M1 G_F4 G_AA G_F2)
+KERNEL(k_g0_p1, 16, MMI_SETUP, G_M0 G_P0 G_F6)
+KERNEL(k_g0_p2, 16, MMI_SETUP, G_M0 G_F1 G_P0 G_F5)
+KERNEL(k_g0_p3, 16, MMI_SETUP, G_M0 G_F2 G_P0 G_F4)
+KERNEL(k_g0_p4, 16, MMI_SETUP, G_M0 G_F3 G_P0 G_F3)
+// The same for pipe 0: filler (add.s|sw) writes no GPR, the probe (addu|lw)
+// puts the addu in pipe 0.
+#define H_F "add.s $f4, $f0, $f1\n" "sw $12, 32($24)\n"
+#define H_F1 H_F
+#define H_F2 H_F H_F
+#define H_F3 H_F2 H_F
+#define H_F4 H_F2 H_F2
+#define H_F5 H_F4 H_F
+#define H_F6 H_F4 H_F2
+#define H_P "addu $25, $12, $13\n" "lw $15, 0($24)\n"
+#define H_M MULT3(10, 12, 13) "sw $13, 36($24)\n"
+#define H_MZ "mult $12, $13\n" "sw $13, 36($24)\n"
+#define H_FILL0 H_F H_F H_F H_F H_F H_F H_F
+KERNEL(k_h_p1, 16, MMI_SETUP, H_M H_P H_F6)
+KERNEL(k_h_p2, 16, MMI_SETUP, H_M H_F1 H_P H_F5)
+KERNEL(k_h_p3, 16, MMI_SETUP, H_M H_F2 H_P H_F4)
+KERNEL(k_h_p4, 16, MMI_SETUP, H_M H_F3 H_P H_F3)
+KERNEL(k_h_z2, 16, MMI_SETUP, H_MZ H_F1 H_P H_F5)
+KERNEL(k_h_base, 16, MMI_SETUP, H_M H_FILL0)
+// Variants of s1 (Ma)(1a)(Ma)(aa) and s2 (aM)(1a)(aM): z = no rd, w = sw.
+#define T_M0Z "mult $12, $13\n"
+#define T_1Z MULT1_ACC_12
+#define T_W "sw $12, 32($24)\n"
+#define T_FS "add.s $f4, $f0, $f1\n"
+KERNEL(k_t1, 16, MMI_SETUP, S_M0 S_A S_1 S_B S_M1 T_W S_A S_B)
+KERNEL(k_t2, 16, MMI_SETUP, S_M0 S_A S_1 S_B S_M1 S_C S_A T_W)
+KERNEL(k_t3, 16, MMI_SETUP, S_M0 S_A S_1 S_B S_M1 S_C T_W S_B)
+KERNEL(k_t4, 16, MMI_SETUP, S_M0 S_A S_1 S_B S_M1 S_C T_FS T_W)
+KERNEL(k_t5, 16, MMI_SETUP, S_M0 S_A S_1 S_B T_M0Z S_C S_A S_B)
+KERNEL(k_t6, 16, MMI_SETUP, T_M0Z S_A S_1 S_B S_M1 S_C S_A S_B)
+KERNEL(k_t7, 16, MMI_SETUP, S_M0 S_A T_1Z S_B S_M1 S_C S_A S_B)
+KERNEL(k_t8, 16, MMI_SETUP, S_A T_M0Z S_1 S_B S_C S_M1)
+KERNEL(k_t9, 16, MMI_SETUP, S_A S_M0 S_1 S_B T_W S_M1)
+KERNEL(k_t10, 16, MMI_SETUP, S_A S_M0 T_1Z S_B S_C S_M1)
+KERNEL(k_t11, 16, MMI_SETUP, S_A S_M0 S_1 S_B S_C T_M0Z)
 // A dot product step: 2 loads + multiply-add, on one or both accumulators.
 KERNEL(k_dot_madd, 16, MMI_SETUP,
        "lw $8, 0($24)\n" "lw $9, 4($24)\n" MADD_ACC "lw $10, 8($24)\n"
@@ -1363,6 +1514,66 @@ void uarch_run_all(u32 *big, int big_words) {
         {"mult1|addu,sw|addu", k_mult1_sw_x1, 64, "rep", "2 = sw not held"},
         {"mflo1", k_mflo1_x1, 64, "instr", "throughput"},
         {"mflo1|addu", k_mflo1_addu, 64, "pair", "1 = paired"},
+        {"mult1|addu,4 addu,lw|addu", k_mult1_lw_3, 64, "rep", "4 = lw not held"},
+        {"mult1|addu,6 addu,lw|addu", k_mult1_lw_4, 64, "rep", "5 = lw not held"},
+        {"mult1|mult", k_mult1_mult3, 64, "pair", "throughput of both"},
+        {"mult1 (3-op)", k_mult1_x1, 64, "instr", "throughput"},
+        {"mult1|addu,addu|addu,sw|addu", k_mult1_sw_2, 64, "rep", "3 = sw not held"},
+        {"2 lw, 3 mult, 3 addu", k_mloop_mult, 16, "rep", "mult bound 6"},
+        {"same, 1 of them mult1", k_mloop_mult1, 16, "rep", "4 = mult1 helps"},
+        {"3 mult, 3 addu", k_m3_mult, 16, "rep", "mult bound 6"},
+        {"same, 1 of them mult1", k_m3_mult1, 16, "rep", "4 = mult1 helps"},
+        {"mult1|addu,mult|addu", k_mult1_then_mult, 64, "rep", "2"},
+        {"mult1|addu,8 addu,lw|addu", k_mult1_lw_5, 64, "rep", "6 = lw not held"},
+        {"mult1|addu,10 addu,lw|addu", k_mult1_lw_6, 64, "rep", "7 = lw not held"},
+        {"mult1|addu,addu|addu,2x lw|addu", k_mult1_lw_23, 64, "rep", "4 = no stall"},
+        {"v: (lw|mult)(mult1|addu)(lw|mult)", k_v_base, 16, "rep", "base"},
+        {"v: mult1 $0", k_v_zero, 16, "rep", "?"},
+        {"v: 2nd lw -> addu", k_v_nolw2, 16, "rep", "?"},
+        {"v: 1st lw -> addu", k_v_nolw1, 16, "rep", "?"},
+        {"v: no lw", k_v_nolw, 16, "rep", "4 expected"},
+        {"v: lw -> sw", k_v_sw, 16, "rep", "?"},
+        {"v: mult1 -> mult", k_v_mult, 16, "rep", "6 expected"},
+        {"v: (mult|lw)(mult1|addu)(mult|lw)", k_v_swap, 16, "rep", "?"},
+        {"s1: (Ma)(1a)(Ma)(aa)", k_s1, 16, "rep", "4"},
+        {"s2: (aM)(1a)(aM)", k_s2, 16, "rep", "4"},
+        {"s3: (Ma)(1a)(aa)(Ma)", k_s3, 16, "rep", "4"},
+        {"s4: (1a)(Ma)(aa)(Ma)", k_s4, 16, "rep", "4"},
+        {"s5: (Ma)(aa)(1a)(Ma)", k_s5, 16, "rep", "4"},
+        {"s6: (Ma)(1 $0 a)(Ma)", k_s6, 16, "rep", "4"},
+        {"s7: (Ma)(1a)", k_s7, 64, "rep", "2"},
+        {"s8: (Ma)(aa)(1a)(aa)", k_s8, 16, "rep", "4"},
+        {"mult1 rd, lw at +1", k_g1_lw1, 16, "rep", "8 = no stall"},
+        {"mult1 rd, (addu|addu) at +1", k_g1_aa1, 16, "rep", "8 = no stall"},
+        {"mult1 rd, lw at +2", k_g1_lw2, 16, "rep", "8 = no stall"},
+        {"mult1 rd, (addu|addu) at +2", k_g1_aa2, 16, "rep", "8 = no stall"},
+        {"mult1 rd, lw at +3", k_g1_lw3, 16, "rep", "8 = no stall"},
+        {"mult1 rd, (addu|addu) at +3", k_g1_aa3, 16, "rep", "8 = no stall"},
+        {"mult1 rd, lw at +4", k_g1_lw4, 16, "rep", "8 = no stall"},
+        {"mult1 rd, (addu|addu) at +4", k_g1_aa4, 16, "rep", "8 = no stall"},
+        {"mult1 rd, lw at +5", k_g1_lw5, 16, "rep", "8 = no stall"},
+        {"mult1 rd, (addu|addu) at +5", k_g1_aa5, 16, "rep", "8 = no stall"},
+        {"mult rd, pipe 0 addu at +1", k_g0_p1, 16, "rep", "8 = no stall"},
+        {"mult rd, pipe 0 addu at +2", k_g0_p2, 16, "rep", "8 = no stall"},
+        {"mult rd, pipe 0 addu at +3", k_g0_p3, 16, "rep", "8 = no stall"},
+        {"mult rd, pipe 0 addu at +4", k_g0_p4, 16, "rep", "8 = no stall"},
+        {"mult rd, (addu|lw) at +1, add.s filler", k_h_p1, 16, "rep", "8 = no stall"},
+        {"mult rd, (addu|lw) at +2, add.s filler", k_h_p2, 16, "rep", "8 = no stall"},
+        {"mult rd, (addu|lw) at +3, add.s filler", k_h_p3, 16, "rep", "8 = no stall"},
+        {"mult rd, (addu|lw) at +4, add.s filler", k_h_p4, 16, "rep", "8 = no stall"},
+        {"mult $0, (addu|lw) at +2, add.s filler", k_h_z2, 16, "rep", "8 = no stall"},
+        {"mult rd, add.s filler only", k_h_base, 16, "rep", "8"},
+        {"t1: s1, (Mw) for 3rd", k_t1, 16, "rep", "?"},
+        {"t2: s1, (aw) for 4th", k_t2, 16, "rep", "?"},
+        {"t3: s1, (wa) for 4th", k_t3, 16, "rep", "?"},
+        {"t4: s1, (add.s w) for 4th", k_t4, 16, "rep", "?"},
+        {"t5: s1, 2nd M no rd", k_t5, 16, "rep", "?"},
+        {"t6: s1, 1st M no rd", k_t6, 16, "rep", "?"},
+        {"t7: s1, mult1 no rd", k_t7, 16, "rep", "?"},
+        {"t8: s2, 1st M no rd", k_t8, 16, "rep", "?"},
+        {"t9: s2, (wM) for 3rd", k_t9, 16, "rep", "?"},
+        {"t10: s2, mult1 no rd", k_t10, 16, "rep", "?"},
+        {"t11: s2, 2nd M no rd", k_t11, 16, "rep", "?"},
         {"dot: 4 lw, 2 madd", k_dot_madd, 16, "rep", "?"},
         {"dot: 4 lw, madd+madd1", k_dot_madd_madd1, 16, "rep", "?"},
         {"pmaddh|pcpyld", k_pmaddh_pcpyld, 64, "pair", "= pmaddh: paired"},
