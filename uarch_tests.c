@@ -370,6 +370,127 @@ KERNEL(k_scale_mmi, 1, MMI_SETUP,
 KERNEL(k_scale_mmi_u, 1, MMI_SETUP,
        VSC(V_ULD) VSC(V_SLL) VSC(V_ADD) VSC(V_ADD1) VSC(V_UST))
 
+// --- Divide, multiply-add, HI/LO moves, SA, unaligned loads ---
+#define W(x) ".word " #x "\n"
+#define DIV_9_10 W(0x012a001a)      // div $9, $10
+#define DIV_12_13 W(0x018d001a)     // div $12, $13
+#define DIV1_9_10 W(0x712a001a)     // div1 $9, $10
+#define DIV1_12_13 W(0x718d001a)    // div1 $12, $13
+#define MFLO_9 W(0x00004812)        // mflo $9
+#define MFLO1_9 W(0x70004812)       // mflo1 $9
+#define MTLO_9 W(0x01200013)        // mtlo $9
+#define MADD_ACC W(0x714b0000)      // madd $0, $10, $11
+#define MADD_9_9 W(0x712b4800)      // madd $9, $9, $11
+#define MADD_9_10 W(0x714b4800)     // madd $9, $10, $11
+#define MADD1_ACC W(0x714b0020)     // madd1 $0, $10, $11
+#define MULT1_ACC_9 W(0x712a0018)   // mult1 $0, $9, $10
+#define PMFHL_LW_9 W(0x70004830)    // pmfhl.lw $9
+#define MTSAB_9 W(0x05380000)       // mtsab $9, 0
+#define MTSAB_0 W(0x04180000)       // mtsab $0, 0
+#define QFSRV(d, s, t) R3(0x700006e8, d, s, t)
+#define PMADDW_ACC R3(0x70000009, 0, 10, 11)  // pmaddw $0, $10, $11
+
+KERNEL(k_div, 16, MMI_SETUP, DIV_9_10 MFLO_9)
+KERNEL(k_div_x1, 16, MMI_SETUP, DIV_12_13)
+KERNEL(k_div_addu, 16, MMI_SETUP,
+       DIV_12_13 "addu $9, $10, $11\n" "addu $14, $10, $11\n"
+       "addu $9, $10, $11\n" "addu $14, $10, $11\n" "addu $9, $10, $11\n"
+       "addu $14, $10, $11\n" "addu $9, $10, $11\n" "addu $14, $10, $11\n"
+       "addu $9, $10, $11\n" "addu $14, $10, $11\n")
+KERNEL(k_div1, 16, MMI_SETUP, DIV1_9_10 MFLO1_9)
+KERNEL(k_div_div1, 16, MMI_SETUP, DIV_12_13 DIV1_12_13)
+KERNEL(k_madd_acc, 64, MMI_SETUP, MADD_ACC)
+KERNEL(k_madd_rd, 64, MMI_SETUP, MADD_9_9)
+KERNEL(k_madd1_acc, 64, MMI_SETUP, MADD1_ACC)
+KERNEL(k_mtlo_madd, 64, MMI_SETUP, MTLO_9 MADD_9_10)
+KERNEL(k_mult1_mflo1, 64, MMI_SETUP, MULT1_ACC_9 MFLO1_9)
+KERNEL(k_pmaddw_acc, 64, MMI_SETUP, PMADDW_ACC)
+KERNEL(k_pmultw_pmfhl, 64, MMI_SETUP, PMULTW(0, 9, 10) PMFHL_LW_9)
+KERNEL(k_qfsrv, 64, MMI_SETUP MTSAB_0, QFSRV(9, 9, 10))
+KERNEL(k_mtsab_qfsrv, 64, MMI_SETUP, MTSAB_9 QFSRV(9, 9, 10))
+KERNEL(k_qfsrv_addu, 64, MMI_SETUP MTSAB_0,
+       QFSRV(9, 12, 13) "addu $10, $12, $13\n")
+KERNEL(k_qfsrv_lw, 64, MMI_SETUP MTSAB_0, QFSRV(9, 12, 13) "lw $10, 0($24)\n")
+// ldr merges into the register ldl wrote
+KERNEL(k_ldl_ldr, 64, MMI_SETUP, "ldl $9, 7($24)\n" "ldr $9, 0($24)\n")
+KERNEL(k_ldl_ldr_use, 64, MMI_SETUP,
+       "ldl $9, 7($24)\n" "ldr $9, 0($24)\n" "addu $10, $9, $11\n")
+
+// --- FPU: R5900 min/max/rsqrt, compare to branch ---
+KERNEL(k_max_s, 64, SETUP, W(0x46010028))    // max.s $f0, $f0, $f1
+KERNEL(k_min_s, 64, SETUP, W(0x46010029))    // min.s $f0, $f0, $f1
+KERNEL(k_rsqrt_s, 64, SETUP, W(0x46004016))  // rsqrt.s $f0, $f8, $f0
+// $f8 == $f9: bc1f is not taken, bc1t is taken (to the next instruction)
+KERNEL(k_ceq_bc1f, 64, SETUP, "c.eq.s $f8, $f9\n" "bc1f 2f\n" "nop\n" "2:\n")
+KERNEL(k_ceq_bc1t, 64, SETUP, "c.eq.s $f8, $f9\n" "bc1t 2f\n" "nop\n" "2:\n")
+KERNEL(k_ceq_x2_bc1f, 64, SETUP,
+       "c.eq.s $f8, $f9\n" "addu $12, $10, $11\n" "addu $13, $10, $11\n"
+       "bc1f 2f\n" "nop\n" "2:\n")
+
+// --- Branches ---
+KERNEL(k_br_nt, 64, SETUP, "bne $9, $10, 2f\n" "nop\n" "2:\n")
+KERNEL(k_br_t, 64, SETUP, "beq $9, $10, 2f\n" "nop\n" "2:\n")
+KERNEL(k_br_nt_addu, 64, SETUP,
+       "addu $12, $10, $11\n" "bne $9, $10, 2f\n" "addu $13, $10, $11\n" "2:\n")
+// xorshift32 in $11; the branch depends on bit 0 (random) or on nothing
+#define XORSHIFT                                                     \
+    "sll $12, $11, 13\n" "xor $11, $11, $12\n" "srl $12, $11, 17\n"  \
+    "xor $11, $11, $12\n" "sll $12, $11, 5\n" "xor $11, $11, $12\n"
+#define RAND_SETUP SETUP "lui $11, 0x1234\n" "ori $11, $11, 0x5679\n"
+KERNEL(k_br_rand, 16, RAND_SETUP,
+       XORSHIFT "andi $13, $11, 1\n" "beq $13, $0, 2f\n" "nop\n" "2:\n")
+KERNEL(k_br_rand_base, 16, RAND_SETUP,
+       XORSHIFT "andi $13, $11, 0\n" "beq $13, $0, 2f\n" "nop\n" "2:\n")
+
+// --- VU0 macro mode (COP2) ---
+// Encodings from the VU Users Manual.
+#define VADD_1 W(0x4be20868)        // vadd.xyzw $vf1, $vf1, $vf2
+#define VMUL_1 W(0x4be2086a)        // vmul.xyzw $vf1, $vf1, $vf2
+#define VMADD_1 W(0x4be20869)       // vmadd.xyzw $vf1, $vf1, $vf2
+#define VMAX_1 W(0x4be2086b)        // vmax.xyzw $vf1, $vf1, $vf2
+#define VMULA_1 W(0x4be20abe)       // vmula.xyzw $ACC, $vf1, $vf2
+#define VMADDA_34 W(0x4be41abd)     // vmadda.xyzw $ACC, $vf3, $vf4
+#define VADD_3 W(0x4be628e8)        // vadd.xyzw $vf3, $vf5, $vf6
+#define VADD_4 W(0x4be62928)        // vadd.xyzw $vf4, $vf5, $vf6
+#define VADD_2_1 W(0x4be308a8)      // vadd.xyzw $vf2, $vf1, $vf3
+#define QMTC2_9_1 W(0x48a90800)     // qmtc2 $9, $vf1
+#define QMFC2_10_3 W(0x482a1800)    // qmfc2 $10, $vf3
+#define LQC2_1 W(0xdb010000)        // lqc2 $vf1, 0($24)
+#define LQC2_7 W(0xdb070000)        // lqc2 $vf7, 0($24)
+#define SQC2_3 W(0xfb030020)        // sqc2 $vf3, 32($24)
+#define VDIV W(0x4a020bbc)          // vdiv $Q, $vf1x, $vf2x
+#define VSQRT W(0x4a0203bd)         // vsqrt $Q, $vf2x
+#define VRSQRT W(0x4a020bbe)        // vrsqrt $Q, $vf1x, $vf2x
+#define VWAITQ W(0x4a0003bf)        // vwaitq
+// $vf1-$vf6 = (1.0, 0, 0, 0), ACC = $vf1 * $vf2
+#define VU0_SETUP                                                    \
+    MMI_SETUP "lui $8, 0x3f80\n"                                     \
+    W(0x48a80800) W(0x48a81000) W(0x48a81800) W(0x48a82000)          \
+    W(0x48a82800) W(0x48a83000) VMULA_1
+
+KERNEL(k_vadd, 64, VU0_SETUP, VADD_1)
+KERNEL(k_vmul, 64, VU0_SETUP, VMUL_1)
+KERNEL(k_vmadd, 64, VU0_SETUP, VMADD_1)
+KERNEL(k_vmax, 64, VU0_SETUP, VMAX_1)
+KERNEL(k_vmadda_acc, 64, VU0_SETUP, VMADDA_34)
+KERNEL(k_vmula_vmadd, 64, VU0_SETUP, VMULA_1 VMADD_1)
+KERNEL(k_qmtc2_vadd, 64, VU0_SETUP, QMTC2_9_1 VADD_2_1)
+KERNEL(k_vadd_qmfc2, 64, VU0_SETUP, VADD_3 QMFC2_10_3)
+KERNEL(k_lqc2_vadd, 64, VU0_SETUP, LQC2_1 VADD_2_1)
+KERNEL(k_vadd_sqc2, 64, VU0_SETUP, VADD_3 SQC2_3)
+KERNEL(k_vdiv_wait, 16, VU0_SETUP, VDIV VWAITQ)
+KERNEL(k_vsqrt_wait, 16, VU0_SETUP, VSQRT VWAITQ)
+KERNEL(k_vrsqrt_wait, 16, VU0_SETUP, VRSQRT VWAITQ)
+// Does vdiv block other VU0 instructions? 7 if not
+KERNEL(k_vdiv_vadd6, 16, VU0_SETUP,
+       VDIV VADD_3 VADD_4 VADD_3 VADD_4 VADD_3 VADD_4 VWAITQ)
+KERNEL(k_vadd_vadd, 64, VU0_SETUP, VADD_3 VADD_4)
+KERNEL(k_vadd_addu, 64, VU0_SETUP, VADD_3 "addu $10, $12, $13\n")
+KERNEL(k_vadd_lw, 64, VU0_SETUP, VADD_3 "lw $10, 0($24)\n")
+KERNEL(k_vadd_lqc2, 64, VU0_SETUP, VADD_3 LQC2_7)
+KERNEL(k_vadd_mul_s, 64, VU0_SETUP, VADD_3 "mul.s $f0, $f8, $f9\n")
+KERNEL(k_vadd_paddw, 64, VU0_SETUP, VADD_3 PADDW(9, 12, 13))
+
 typedef u32 (*kernel_fn)(u32 *p, int iters);
 
 typedef struct {
@@ -397,6 +518,14 @@ static float run(kernel_fn fn, u32 *p, int iters, int reps) {
 static void print_line(const char *name, float cyc, const char *unit,
                        const char *expect) {
     printf("  %-22s %7.2f cyc/%-6s (%s)\n", name, cyc, unit, expect);
+}
+
+static void run_table(const char *title, const uarch_test *t, unsigned n,
+                      u32 *p) {
+    printf("--- %s ---\n", title);
+    for (unsigned i = 0; i < n; i++)
+        print_line(t[i].name, run(t[i].fn, p, LAT_ITERS, t[i].reps), t[i].unit,
+                   t[i].expect);
 }
 
 void uarch_run_all(u32 *big, int big_words) {
@@ -587,6 +716,75 @@ void uarch_run_all(u32 *big, int big_words) {
         print_line(scale[i].name,
                    run(scale[i].fn, sbuf, LAT_ITERS, scale[i].reps),
                    scale[i].unit, scale[i].expect);
+
+    static const uarch_test intx[] = {
+        {"div+mflo", k_div, 16, "2instr", "?"},
+        {"div", k_div_x1, 16, "instr", "throughput"},
+        {"div,addu x10", k_div_addu, 16, "group", "= div: ALU not blocked"},
+        {"div1+mflo1", k_div1, 16, "2instr", "?"},
+        {"div|div1", k_div_div1, 16, "pair", "= div: in parallel"},
+        {"madd ACC->ACC", k_madd_acc, 64, "instr", "?"},
+        {"madd rd->rs", k_madd_rd, 64, "instr", "?"},
+        {"madd1 ACC->ACC", k_madd1_acc, 64, "instr", "?"},
+        {"mtlo+madd", k_mtlo_madd, 64, "2instr", "?"},
+        {"mult1+mflo1", k_mult1_mflo1, 64, "2instr", "?"},
+        {"pmaddw ACC->ACC", k_pmaddw_acc, 64, "instr", "?"},
+        {"pmultw+pmfhl.lw", k_pmultw_pmfhl, 64, "2instr", "?"},
+        {"qfsrv", k_qfsrv, 64, "instr", "?"},
+        {"mtsab+qfsrv", k_mtsab_qfsrv, 64, "2instr", "?"},
+        {"qfsrv|addu", k_qfsrv_addu, 64, "pair", "1 = paired"},
+        {"qfsrv|lw", k_qfsrv_lw, 64, "pair", "1 = paired"},
+        {"ldl+ldr", k_ldl_ldr, 64, "2instr", "?"},
+        {"ldl+ldr->addu", k_ldl_ldr_use, 64, "rep", "?"},
+    };
+    static const uarch_test fpbr[] = {
+        {"max.s", k_max_s, 64, "instr", "?"},
+        {"min.s", k_min_s, 64, "instr", "?"},
+        {"rsqrt.s", k_rsqrt_s, 64, "instr", "?"},
+        {"c.eq.s,bc1f (not taken)", k_ceq_bc1f, 64, "rep", "?"},
+        {"c.eq.s,bc1t (taken)", k_ceq_bc1t, 64, "rep", "?"},
+        {"c.eq.s,2 addu,bc1f", k_ceq_x2_bc1f, 64, "rep", "?"},
+        {"bne,nop (not taken)", k_br_nt, 64, "rep", "?"},
+        {"beq,nop (taken)", k_br_t, 64, "rep", "?"},
+        {"addu,bne,addu", k_br_nt_addu, 64, "rep", "?"},
+        {"random branch", k_br_rand, 16, "rep", "50% mispredicted"},
+        {"same, always taken", k_br_rand_base, 16, "rep",
+         "difference x2 = penalty"},
+    };
+    static const uarch_test vu0[] = {
+        {"vadd", k_vadd, 64, "instr", "?"},
+        {"vmul", k_vmul, 64, "instr", "?"},
+        {"vmadd", k_vmadd, 64, "instr", "?"},
+        {"vmax", k_vmax, 64, "instr", "?"},
+        {"vmadda ACC->ACC", k_vmadda_acc, 64, "instr", "?"},
+        {"vmula+vmadd", k_vmula_vmadd, 64, "2instr", "?"},
+        {"qmtc2->vadd", k_qmtc2_vadd, 64, "rep", "= latency"},
+        {"vadd->qmfc2", k_vadd_qmfc2, 64, "rep", "= latency"},
+        {"lqc2->vadd", k_lqc2_vadd, 64, "rep", "= latency"},
+        {"vadd->sqc2", k_vadd_sqc2, 64, "rep", "= latency"},
+        {"vdiv+vwaitq", k_vdiv_wait, 16, "rep", "?"},
+        {"vsqrt+vwaitq", k_vsqrt_wait, 16, "rep", "?"},
+        {"vrsqrt+vwaitq", k_vrsqrt_wait, 16, "rep", "?"},
+        {"vdiv,vadd x6,vwaitq", k_vdiv_vadd6, 16, "group",
+         "= vdiv: not blocked"},
+        {"vadd|vadd", k_vadd_vadd, 64, "pair", "1 = paired"},
+        {"vadd|addu", k_vadd_addu, 64, "pair", "1 = paired"},
+        {"vadd|lw", k_vadd_lw, 64, "pair", "1 = paired"},
+        {"vadd|lqc2", k_vadd_lqc2, 64, "pair", "1 = paired"},
+        {"vadd|mul.s", k_vadd_mul_s, 64, "pair", "1 = paired"},
+        {"vadd|paddw", k_vadd_paddw, 64, "pair", "1 = paired"},
+    };
+
+    run_table("Divide, multiply-add, HI/LO, SA, ldl/ldr", intx,
+              sizeof(intx) / sizeof(intx[0]), buf);
+    run_table("FPU min/max/rsqrt, compare to branch, branches", fpbr,
+              sizeof(fpbr) / sizeof(fpbr[0]), buf);
+    u32 status;
+    __asm__ __volatile__("mfc0 %0, $12" : "=r"(status));
+    if (status & (1u << 30))  // Status.CU2
+        run_table("VU0 macro mode", vu0, sizeof(vu0) / sizeof(vu0[0]), buf);
+    else
+        printf("--- VU0 macro mode: skipped, COP2 not usable ---\n");
 
     // Memory: one line per 16 words, much larger than the 8KB data cache
     int lines = big_words / 16;
