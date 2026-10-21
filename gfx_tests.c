@@ -6,11 +6,30 @@
 #define SPR_H 64
 #define SPR_PIXELS (SPR_W * SPR_H)
 
-static u32 sprite[SPR_PIXELS] __attribute__((aligned(64)));
-static u32 frame[SPR_PIXELS] __attribute__((aligned(64)));
-static u8 indexed[SPR_PIXELS] __attribute__((aligned(64)));
-static u32 palette[256] __attribute__((aligned(64)));
-static u16 frame16[SPR_PIXELS] __attribute__((aligned(64)));
+#define SCALED_W 96
+#define SCALED_H 96
+
+// The 8 KB data cache is 2-way with 4 KB per way, so buffers at the same
+// address modulo 4 KB compete for 2 lines. One struct gives every compiler
+// the same layout; the buffers start 1 KB apart modulo 4 KB.
+static struct {
+    u32 sprite[SPR_PIXELS];          // 0x000
+    u32 pad0[256];
+    u32 frame[SPR_PIXELS];           // 0x400
+    u32 pad1[256];
+    u8 indexed[SPR_PIXELS];          // 0x800
+    u32 pad2[256];
+    u32 palette[256];                // 0xc00
+    u16 frame16[SPR_PIXELS];         // 0x000
+    u32 pad3[256];
+    u32 scaled[SCALED_W * SCALED_H]; // 0x400
+} gfx_mem __attribute__((aligned(4096)));
+#define sprite gfx_mem.sprite
+#define frame gfx_mem.frame
+#define indexed gfx_mem.indexed
+#define palette gfx_mem.palette
+#define frame16 gfx_mem.frame16
+#define scaled gfx_mem.scaled
 
 // --- 2D ---
 
@@ -58,9 +77,6 @@ static u32 to_ct16(void) {
     return app_hash(frame16, sizeof(frame16));
 }
 
-#define SCALED_W 96
-#define SCALED_H 96
-static u32 scaled[SCALED_W * SCALED_H] __attribute__((aligned(64)));
 
 // Scale the sprite to 96x96 with nearest neighbor, 16.16 fixed-point steps
 static u32 scale_nn(void) {
