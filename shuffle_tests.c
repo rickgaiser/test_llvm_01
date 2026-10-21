@@ -1,6 +1,7 @@
 // Integer vector shuffles of the kinds that the R5900 has MMI instructions
 // for: the even and odd elements of two vectors (also of one), the
-// interleaved low and high halves, and the low and high halves.
+// interleaved low and high halves, and the low and high halves. Also splats
+// of a register, extensions to wider elements and 16x16->32 multiplies.
 #include <stdio.h>
 #include "app_tests.h"
 #include "shuffle_tests.h"
@@ -8,6 +9,11 @@
 typedef unsigned int v4w __attribute__((vector_size(16)));
 typedef unsigned short v8h __attribute__((vector_size(16)));
 typedef unsigned char v16b __attribute__((vector_size(16)));
+typedef short v8s __attribute__((vector_size(16)));
+typedef signed char v16sb __attribute__((vector_size(16)));
+typedef int v8i __attribute__((vector_size(32)));
+typedef unsigned short v16uh __attribute__((vector_size(32)));
+typedef int v16i __attribute__((vector_size(64)));
 
 static unsigned char in_a[16] __attribute__((aligned(16)));
 static unsigned char in_b[16] __attribute__((aligned(16)));
@@ -49,6 +55,23 @@ static void __attribute__((noinline)) shuffle_v16b(void) {
     *(v16b *)res[7] = __builtin_shufflevector(a, b, 1, 3, 5, 7, 9, 11, 13, 15, 1, 3, 5, 7, 9, 11, 13, 15);
 }
 
+static volatile unsigned scalar = 0x89abcdefu;
+static int wide[64] __attribute__((aligned(64)));
+
+static void __attribute__((noinline)) widen_checks(void) {
+    unsigned x = scalar;
+    *(v4w *)res[0] = (v4w){x, x, x, x};
+    *(v8h *)res[1] = (v8h){x, x, x, x, x, x, x, x};
+    *(v16b *)res[2] = (v16b){x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x};
+    v8s a = *(v8s *)in_a, b = *(v8s *)in_b;
+    v8i sa = __builtin_convertvector(a, v8i), sb = __builtin_convertvector(b, v8i);
+    *(v8i *)&wide[0] = sa * sb;
+    *(v8i *)&wide[8] = sa * (short)x;
+    *(v16uh *)&wide[16] = __builtin_convertvector(*(v16b *)in_b, v16uh);
+    *(v16i *)&wide[32] = __builtin_convertvector(*(v16sb *)in_b, v16i);
+    *(v16i *)&wide[48] = __builtin_convertvector(*(v16b *)in_b, v16i);
+}
+
 void shuffle_checks(void) {
     for (int i = 0; i < 16; i++) {
         in_a[i] = 0x10 + i;
@@ -60,5 +83,8 @@ void shuffle_checks(void) {
     shuffle_v8h();
     printf("Result: halfwords 0x%08x\n", (unsigned)app_hash(res, sizeof(res)));
     shuffle_v16b();
-    printf("Result: bytes 0x%08x\n\n", (unsigned)app_hash(res, sizeof(res)));
+    printf("Result: bytes 0x%08x\n", (unsigned)app_hash(res, sizeof(res)));
+    widen_checks();
+    printf("Result: splats 0x%08x, extend and multiply 0x%08x\n\n",
+           (unsigned)app_hash(res, 48), (unsigned)app_hash(wide, sizeof(wide)));
 }
