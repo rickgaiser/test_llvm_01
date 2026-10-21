@@ -35,4 +35,7 @@ void test_dual_pipeline_madd(unsigned int * restrict data ALIGNED16,
                             int count, int scalar,
                             unsigned int result[2] ALIGNED16);
 
+void int_divide(int * restrict in ALIGNED16, int * restrict out ALIGNED16,
+                int count);
+
 #endif // INT_TESTS_H

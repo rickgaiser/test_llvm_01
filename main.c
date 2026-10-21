@@ -136,7 +136,7 @@ int main() {
     int scalar = 7;
 
     // Result variables for summary
-    float mops1, mops2, mops3, mops4;
+    float mops1, mops2, mops3, mops4, mops5;
     float mflops1, mflops2, mflops3;
     float mflops_vpu1, mflops_vpu2, mflops_vpu3, mflops_vpu4, mflops_vpu5;
 
@@ -221,6 +221,26 @@ int main() {
     printf("Time: %llu ticks (%.2f us)\n", ticks4, usec4);
     printf("Performance: %.2f MOPS\n", mops4);
     printf("Cycles/4 elements: %.2f (ideal dual-issue = 4)\n\n", cycles_per_4);
+
+    // Test 5: independent divides
+    printf("--- Test 5: Int Divide (%d ints x %d batches) ---\n", NUM_INTS, int_batches);
+
+    u64 start_div = GetTimerSystemTime();
+    for (int iter = 0; iter < int_batches; iter++) {
+        int_divide(int_list_in, int_list_out, NUM_INTS);
+    }
+    u64 end_div = GetTimerSystemTime();
+
+    u64 ticks_div = end_div - start_div;
+    float usec_div = (float)ticks_div / 150.0f;
+    mops5 = (float)NUM_INTS * int_batches / usec_div;
+    float cycles_per_div = (float)ticks_div / ((float)NUM_INTS * int_batches);
+
+    printf("First: %d -> %d, Last: %d -> %d\n", int_list_in[0], int_list_out[0],
+           int_list_in[NUM_INTS-1], int_list_out[NUM_INTS-1]);
+    printf("Time: %llu ticks (%.2f us)\n", ticks_div, usec_div);
+    printf("Performance: %.2f MOPS\n", mops5);
+    printf("Ticks/divide: %.2f\n\n", cycles_per_div);
 
     // === FPU Compare Tests ===
     printf("=== FPU Compare Tests ===\n\n");
@@ -595,6 +615,7 @@ int main() {
     printf("  Int Scalar:     %7.2f MOPS\n", mops2);
     printf("  Dual Pipeline:  %7.2f MOPS\n", mops3);
     printf("  MADD Pipeline:  %7.2f MOPS\n", mops4);
+    printf("  Int Divide:     %7.2f MOPS\n", mops5);
     printf("FPU:\n");
     printf("  Mat x Vec:      %7.2f MFLOPS\n", mflops1);
     printf("  Mat x Mat:      %7.2f MFLOPS\n", mflops2);

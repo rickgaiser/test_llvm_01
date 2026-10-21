@@ -82,3 +82,10 @@ void test_dual_pipeline_madd(unsigned int * restrict data ALIGNED16,
     result[0] = sum0;
     result[1] = sum1;
 }
+
+void int_divide(int * restrict in ALIGNED16, int * restrict out ALIGNED16,
+                int count) {
+    // Independent divides: the R5900 can run two at a time (DIV and DIV1)
+    for (int i = 0; i < count; i++)
+        out[i] = in[i] / (((in[i] >> 4) & 7) + 1);
+}
