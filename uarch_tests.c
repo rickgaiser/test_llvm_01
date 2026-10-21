@@ -871,7 +871,100 @@ static void run_table(const char *title, const uarch_test *t, unsigned n,
                    t[i].expect);
 }
 
+// --- Hazard checks ---
+// MIPS I-III need an instruction between c.cond.s and bc1t/bc1f, and between
+// mfc1 and the use of its result. These run the pairs back to back and check
+// that the new value is used; the condition and the value change every
+// repetition.
+
+// $f8 = 1.0, $f9 = 1.0 or 2.0 alternating; sums the repetition counts at
+// which bc1t is taken. A stale condition would give the other half.
+static u32 hazard_fcc(int reps) {
+    u32 sum;
+    __asm__ __volatile__(
+        ".set push\n.set noreorder\n.set noat\n"
+        "li $8, 0x3f800000\n" "mtc1 $8, $f8\n"
+        "li $9, 0x40000000\n"
+        "move %0, $0\n"
+        "1:\n"
+        "andi $10, %1, 1\n"
+        "movn $11, $8, $10\n" "movz $11, $9, $10\n"
+        "mtc1 $11, $f9\n"
+        "nop\n" "nop\n" "nop\n" "nop\n"
+        "c.eq.s $f8, $f9\n"
+        "bc1t 2f\n"
+        "nop\n"
+        "b 3f\n"
+        "nop\n"
+        "2:\n"
+        "addu %0, %0, %1\n"
+        "3:\n"
+        "addiu %1, %1, -1\n"
+        "bnez %1, 1b\n"
+        "nop\n"
+        ".set pop\n"
+        : "=&r"(sum), "+r"(reps)
+        :
+        : "$8", "$9", "$10", "$11", "$f8", "$f9", "memory");
+    return sum;
+}
+
+// $f1 = the repetition count; sums mfc1's result through an addu right after
+static u32 hazard_mfc1(int reps) {
+    u32 sum;
+    __asm__ __volatile__(
+        ".set push\n.set noreorder\n.set noat\n"
+        "move %0, $0\n"
+        "1:\n"
+        "mtc1 %1, $f1\n"
+        "nop\n" "nop\n" "nop\n" "nop\n"
+        "mfc1 $9, $f1\n"
+        "addu %0, %0, $9\n"
+        "move $9, $0\n"
+        "addiu %1, %1, -1\n"
+        "bnez %1, 1b\n"
+        "nop\n"
+        ".set pop\n"
+        : "=&r"(sum), "+r"(reps)
+        :
+        : "$9", "$f1", "memory");
+    return sum;
+}
+
+// mtc1 the repetition count, mov.s it right after; sums it through mfc1
+static u32 hazard_mtc1(int reps) {
+    u32 sum;
+    __asm__ __volatile__(
+        ".set push\n.set noreorder\n.set noat\n"
+        "move %0, $0\n"
+        "mtc1 $0, $f1\n"
+        "1:\n"
+        "mtc1 %1, $f1\n"
+        "mov.s $f2, $f1\n"
+        "nop\n" "nop\n" "nop\n" "nop\n"
+        "mfc1 $9, $f2\n"
+        "nop\n" "nop\n"
+        "addu %0, %0, $9\n"
+        "addiu %1, %1, -1\n"
+        "bnez %1, 1b\n"
+        "nop\n"
+        ".set pop\n"
+        : "=&r"(sum), "+r"(reps)
+        :
+        : "$9", "$f1", "$f2", "memory");
+    return sum;
+}
+
 void uarch_run_all(u32 *big, int big_words) {
+    // reps = 1000: bc1t is taken at the odd counts, 1 + 3 + ... + 999; the
+    // mfc1 sum is 1 + 2 + ... + 1000
+    printf("--- Hazard checks ---\n");
+    printf("Result: c.eq.s,bc1t sum %u (expect 250000)\n",
+           (unsigned)hazard_fcc(1000));
+    printf("Result: mfc1,addu sum %u (expect 500500)\n",
+           (unsigned)hazard_mfc1(1000));
+    printf("Result: mtc1,mov.s sum %u (expect 500500)\n",
+           (unsigned)hazard_mtc1(1000));
     static u32 buf[16] __attribute__((aligned(64)));
     buf[0] = (u32)&buf[0];
     buf[1] = 0;
