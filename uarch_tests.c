@@ -143,6 +143,19 @@ KERNEL(k_stream_use0, 1, "move $8, %3\n" "move $25, $0\n",
 KERNEL(k_stream_use8, 1, "move $8, %3\n" "move $25, $0\n",
        LW8(0) ADD8 LW8(32) ADD8 "addiu $8, $8, 64\n")
 
+// The order of the loads of a line: 8 loads, then the 8 adds that use them
+KERNEL(k_stream_desc8, 1, "move $8, %3\n" "move $25, $0\n",
+       "lw $9, 28($8)\n" "lw $10, 24($8)\n" "lw $11, 20($8)\n" "lw $12, 16($8)\n" "lw $13, 12($8)\n" "lw $14, 8($8)\n" "lw $15, 4($8)\n" "lw $24, 0($8)\n" ADD8 "lw $9, 60($8)\n" "lw $10, 56($8)\n" "lw $11, 52($8)\n" "lw $12, 48($8)\n" "lw $13, 44($8)\n" "lw $14, 40($8)\n" "lw $15, 36($8)\n" "lw $24, 32($8)\n" ADD8 "addiu $8, $8, 64\n")
+KERNEL(k_stream_scr8, 1, "move $8, %3\n" "move $25, $0\n",
+       "lw $9, 4($8)\n" "lw $10, 0($8)\n" "lw $11, 8($8)\n" "lw $12, 12($8)\n" "lw $13, 16($8)\n" "lw $14, 20($8)\n" "lw $15, 28($8)\n" "lw $24, 24($8)\n" ADD8 "lw $9, 36($8)\n" "lw $10, 32($8)\n" "lw $11, 40($8)\n" "lw $12, 44($8)\n" "lw $13, 48($8)\n" "lw $14, 52($8)\n" "lw $15, 60($8)\n" "lw $24, 56($8)\n" ADD8 "addiu $8, $8, 64\n")
+// One load miss, then the other words of the line in descending order
+KERNEL(k_stream_desc16, 1, "move $8, %3\n" "move $25, $0\n",
+       "lw $9, 60($8)\n" "lw $10, 56($8)\n" "lw $11, 52($8)\n" "lw $12, 48($8)\n" "lw $13, 44($8)\n" "lw $14, 40($8)\n" "lw $15, 36($8)\n" "lw $24, 32($8)\n" "lw $9, 28($8)\n" "lw $10, 24($8)\n" "lw $11, 20($8)\n" "lw $12, 16($8)\n" "lw $13, 12($8)\n" "lw $14, 8($8)\n" "lw $15, 4($8)\n" "lw $24, 0($8)\n" ADD8 ADD8 "addiu $8, $8, 64\n")
+KERNEL(k_stream_asc16, 1, "move $8, %3\n" "move $25, $0\n",
+       "lw $9, 0($8)\n" "lw $10, 4($8)\n" "lw $11, 8($8)\n" "lw $12, 12($8)\n" "lw $13, 16($8)\n" "lw $14, 20($8)\n" "lw $15, 24($8)\n" "lw $24, 28($8)\n" "lw $9, 32($8)\n" "lw $10, 36($8)\n" "lw $11, 40($8)\n" "lw $12, 44($8)\n" "lw $13, 48($8)\n" "lw $14, 52($8)\n" "lw $15, 56($8)\n" "lw $24, 60($8)\n" ADD8 ADD8 "addiu $8, $8, 64\n")
+// Stores of a line in descending order
+KERNEL(k_st_line_sw_desc, 1, "move $8, %3\n", "sw $9, 60($8)\n" "sw $9, 56($8)\n" "sw $9, 52($8)\n" "sw $9, 48($8)\n" "sw $9, 44($8)\n" "sw $9, 40($8)\n" "sw $9, 36($8)\n" "sw $9, 32($8)\n" "sw $9, 28($8)\n" "sw $9, 24($8)\n" "sw $9, 20($8)\n" "sw $9, 16($8)\n" "sw $9, 12($8)\n" "sw $9, 8($8)\n" "sw $9, 4($8)\n" "sw $9, 0($8)\n" "addiu $8, $8, 64\n")
+
 // Overlapping misses: $8 walks the first half of the buffer, $11 the second
 #define HALVES_SETUP "move $8, %3\n" "lui $11, 8\n" "addu $11, $11, %3\n"
 // One miss per iteration
@@ -152,6 +165,14 @@ KERNEL(k_miss1, 1, HALVES_SETUP,
 KERNEL(k_miss2, 1, HALVES_SETUP,
        "lw $9, 0($8)\n" "lw $10, 0($11)\n" "addu $25, $25, $9\n"
        "addu $25, $25, $10\n" "addiu $8, $8, 64\n" "addiu $11, $11, 64\n")
+
+// Stores to lines that are not in the cache, one line per iteration
+KERNEL(k_st_miss1, 1, "move $8, %3\n", "sw $9, 0($8)\n" "addiu $8, $8, 64\n")
+KERNEL(k_st_line_sw, 1, "move $8, %3\n", "sw $9, 0($8)\n" "sw $9, 4($8)\n" "sw $9, 8($8)\n" "sw $9, 12($8)\n" "sw $9, 16($8)\n" "sw $9, 20($8)\n" "sw $9, 24($8)\n" "sw $9, 28($8)\n" "sw $9, 32($8)\n" "sw $9, 36($8)\n" "sw $9, 40($8)\n" "sw $9, 44($8)\n" "sw $9, 48($8)\n" "sw $9, 52($8)\n" "sw $9, 56($8)\n" "sw $9, 60($8)\n" "addiu $8, $8, 64\n")
+KERNEL(k_st_line_sd, 1, "move $8, %3\n", "sd $9, 0($8)\n" "sd $9, 8($8)\n" "sd $9, 16($8)\n" "sd $9, 24($8)\n" "sd $9, 32($8)\n" "sd $9, 40($8)\n" "sd $9, 48($8)\n" "sd $9, 56($8)\n" "addiu $8, $8, 64\n")
+// A copy: loads from one half, stores to the other
+KERNEL(k_copy_line, 1, HALVES_SETUP,
+       "lw $9, 0($8)\n" "sw $9, 0($11)\n" "lw $9, 4($8)\n" "sw $9, 4($11)\n" "lw $9, 8($8)\n" "sw $9, 8($11)\n" "lw $9, 12($8)\n" "sw $9, 12($11)\n" "lw $9, 16($8)\n" "sw $9, 16($11)\n" "lw $9, 20($8)\n" "sw $9, 20($11)\n" "lw $9, 24($8)\n" "sw $9, 24($11)\n" "lw $9, 28($8)\n" "sw $9, 28($11)\n" "lw $9, 32($8)\n" "sw $9, 32($11)\n" "lw $9, 36($8)\n" "sw $9, 36($11)\n" "lw $9, 40($8)\n" "sw $9, 40($11)\n" "lw $9, 44($8)\n" "sw $9, 44($11)\n" "lw $9, 48($8)\n" "sw $9, 48($11)\n" "lw $9, 52($8)\n" "sw $9, 52($11)\n" "lw $9, 56($8)\n" "sw $9, 56($11)\n" "lw $9, 60($8)\n" "sw $9, 60($11)\n" "addiu $8, $8, 64\n" "addiu $11, $11, 64\n")
 
 // --- 128-bit multimedia (MMI) ---
 // Not every assembler accepts the R5900 instructions, so they are .word. The
@@ -165,6 +186,8 @@ KERNEL(k_miss2, 1, HALVES_SETUP,
     ".word (" #op " | (" #b " << 21) | (" #t " << 16) | (" #off "))\n"
 #define LQ(t, off, b) MEM(0x78000000, t, off, b)
 #define SQ(t, off, b) MEM(0x7c000000, t, off, b)
+KERNEL(k_st_line_sq, 1, "move $8, %3\n",
+       SQ(9, 0, 8) SQ(9, 16, 8) SQ(9, 32, 8) SQ(9, 48, 8) "addiu $8, $8, 64\n")
 #define PADDW(d, s, t) R3(0x70000008, d, s, t)
 #define PCGTW(d, s, t) R3(0x70000088, d, s, t)
 #define PMAXW(d, s, t) R3(0x700000c8, d, s, t)
@@ -1320,6 +1343,14 @@ void uarch_run_all(u32 *big, int big_words) {
                "use right after load");
     print_line("stream 8 lw,8 use", run(k_stream_use8, big, lines, 1), "line",
                "use 8 loads later");
+    print_line("8 lw desc,8 use", run(k_stream_desc8, big, lines, 1), "line",
+               "descending offsets");
+    print_line("8 lw scrambled,8 use", run(k_stream_scr8, big, lines, 1), "line",
+               "4,0,8,12,16,20,28,24");
+    print_line("16 lw asc,16 use", run(k_stream_asc16, big, lines, 1), "line",
+               "ascending");
+    print_line("16 lw desc,16 use", run(k_stream_desc16, big, lines, 1), "line",
+               "descending");
     printf("--- STREAM Sum loop, load to add distance (cyc/line) ---\n");
     static const struct {
         const char *name;
@@ -1367,5 +1398,18 @@ void uarch_run_all(u32 *big, int big_words) {
                "one load miss");
     print_line("2 misses", run(k_miss2, big, lines / 2, 1), "iter",
                "= 1 miss: overlap, 2x: serialized");
+    printf("--- Store misses (cyc/line) ---\n");
+    print_line("1 sw per line", run(k_st_miss1, big, lines, 1), "line",
+               "store miss");
+    print_line("16 sw per line", run(k_st_line_sw, big, lines, 1), "line",
+               "line written by words");
+    print_line("8 sd per line", run(k_st_line_sd, big, lines, 1), "line",
+               "by doublewords");
+    print_line("4 sq per line", run(k_st_line_sq, big, lines, 1), "line",
+               "by quadwords");
+    print_line("16 sw desc per line", run(k_st_line_sw_desc, big, lines, 1),
+               "line", "descending");
+    print_line("copy 16 lw,sw", run(k_copy_line, big, lines / 2, 1), "line",
+               "load line + store line");
     printf("\n");
 }
