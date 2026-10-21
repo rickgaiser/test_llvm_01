@@ -401,6 +401,8 @@ KERNEL(k_scale_mmi_u, 1, MMI_SETUP,
 #define MTSAB_0 W(0x04180000)       // mtsab $0, 0
 #define QFSRV(d, s, t) R3(0x700006e8, d, s, t)
 #define PMADDW_ACC R3(0x70000009, 0, 10, 11)  // pmaddw $0, $10, $11
+#define PMADDH(d, s, t) R3(0x70000409, d, s, t)
+#define PHMADH(d, s, t) R3(0x70000449, d, s, t)
 
 KERNEL(k_div, 16, MMI_SETUP, DIV_9_10 MFLO_9)
 KERNEL(k_div_x1, 16, MMI_SETUP, DIV_12_13)
@@ -418,6 +420,13 @@ KERNEL(k_mtlo_madd, 64, MMI_SETUP, MTLO_9 MADD_9_10)
 KERNEL(k_mult1_mflo1, 64, MMI_SETUP, MULT1_ACC_9 MFLO1_9)
 KERNEL(k_pmaddw_acc, 64, MMI_SETUP, PMADDW_ACC)
 KERNEL(k_pmultw_pmfhl, 64, MMI_SETUP, PMULTW(0, 9, 10) PMFHL_LW_9)
+KERNEL(k_pmaddh_acc, 64, MMI_SETUP, PMADDH(0, 10, 11))
+KERNEL(k_pmaddh_rd, 64, MMI_SETUP, PMADDH(9, 9, 11))
+KERNEL(k_pmaddh_pmflo, 64, MMI_SETUP, PMADDH(0, 10, 11) PMFLO(9))
+KERNEL(k_pmaddh_ldl, 64, MMI_SETUP, PMADDH(0, 10, 11) "ldl $9, 7($24)\n")
+KERNEL(k_pmaddh_pcpyld, 64, MMI_SETUP, PMADDH(0, 10, 11) PCPYLD(9, 12, 13))
+KERNEL(k_phmadh_rd, 64, MMI_SETUP, PHMADH(9, 9, 11))
+KERNEL(k_phmadh_paddw, 64, MMI_SETUP, PHMADH(9, 12, 13) PADDW(10, 10, 9))
 KERNEL(k_qfsrv, 64, MMI_SETUP MTSAB_0, QFSRV(9, 9, 10))
 KERNEL(k_mtsab_qfsrv, 64, MMI_SETUP, MTSAB_9 QFSRV(9, 9, 10))
 KERNEL(k_qfsrv_addu, 64, MMI_SETUP MTSAB_0,
@@ -1270,6 +1279,13 @@ void uarch_run_all(u32 *big, int big_words) {
         {"mult1+mflo1", k_mult1_mflo1, 64, "2instr", "?"},
         {"pmaddw ACC->ACC", k_pmaddw_acc, 64, "instr", "?"},
         {"pmultw+pmfhl.lw", k_pmultw_pmfhl, 64, "2instr", "?"},
+        {"pmaddh ACC->ACC", k_pmaddh_acc, 64, "instr", "?"},
+        {"pmaddh rd->rs", k_pmaddh_rd, 64, "instr", "?"},
+        {"pmaddh+pmflo", k_pmaddh_pmflo, 64, "2instr", "?"},
+        {"pmaddh|ldl", k_pmaddh_ldl, 64, "pair", "= pmaddh: paired"},
+        {"pmaddh|pcpyld", k_pmaddh_pcpyld, 64, "pair", "= pmaddh: paired"},
+        {"phmadh rd->rs", k_phmadh_rd, 64, "instr", "?"},
+        {"phmadh+paddw", k_phmadh_paddw, 64, "2instr", "paddw chain"},
         {"qfsrv", k_qfsrv, 64, "instr", "?"},
         {"mtsab+qfsrv", k_mtsab_qfsrv, 64, "2instr", "?"},
         {"qfsrv|addu", k_qfsrv_addu, 64, "pair", "1 = paired"},
