@@ -396,6 +396,7 @@ KERNEL(k_scale_mmi_u, 1, MMI_SETUP,
 #define MADD_9_10 W(0x714b4800)     // madd $9, $10, $11
 #define MADD1_ACC W(0x714b0020)     // madd1 $0, $10, $11
 #define MULT1_ACC_9 W(0x712a0018)   // mult1 $0, $9, $10
+#define MULT1_ACC_12 W(0x718d0018)  // mult1 $0, $12, $13
 #define PMFHL_LW_9 W(0x70004830)    // pmfhl.lw $9
 #define MTSAB_9 W(0x05380000)       // mtsab $9, 0
 #define MTSAB_0 W(0x04180000)       // mtsab $0, 0
@@ -424,6 +425,65 @@ KERNEL(k_pmaddh_acc, 64, MMI_SETUP, PMADDH(0, 10, 11))
 KERNEL(k_pmaddh_rd, 64, MMI_SETUP, PMADDH(9, 9, 11))
 KERNEL(k_pmaddh_pmflo, 64, MMI_SETUP, PMADDH(0, 10, 11) PMFLO(9))
 KERNEL(k_pmaddh_ldl, 64, MMI_SETUP, PMADDH(0, 10, 11) "ldl $9, 7($24)\n")
+// MULT1/DIV1 issue in pipe 1 like the loads and stores. Two aligned pairs
+// per rep: (x|y)(addu|z) takes 2 cycles if x and y pair, otherwise 3.
+#define MFHI1_9 W(0x70004810)       // mfhi1 $9
+#define MFLO1_14 W(0x70007012)      // mflo1 $14
+KERNEL(k_mult1_lw, 64, MMI_SETUP,
+       MULT1(10, 12, 13) "lw $11, 0($24)\n" "addu $9, $12, $13\n"
+       "lw $14, 4($24)\n")
+KERNEL(k_lw_mult1, 64, MMI_SETUP,
+       "lw $11, 0($24)\n" MULT1(10, 12, 13) "addu $9, $12, $13\n"
+       "lw $14, 4($24)\n")
+KERNEL(k_mult3_lw, 64, MMI_SETUP,
+       MULT3(10, 12, 13) "lw $11, 0($24)\n" "addu $9, $12, $13\n"
+       "lw $14, 4($24)\n")
+KERNEL(k_mult1_sw, 64, MMI_SETUP,
+       MULT1(10, 12, 13) "sw $12, 0($24)\n" "addu $9, $12, $13\n"
+       "sw $13, 4($24)\n")
+KERNEL(k_mult1_addu, 64, MMI_SETUP,
+       MULT1(10, 12, 13) "addu $11, $12, $13\n" "addu $9, $12, $13\n"
+       "addu $14, $12, $13\n")
+KERNEL(k_mflo1_lw, 64, MMI_SETUP, MFLO1_9 "lw $11, 0($24)\n")
+KERNEL(k_mflo_lw, 64, MMI_SETUP, MFLO_9 "lw $11, 0($24)\n")
+KERNEL(k_mfhi1_mflo1, 64, MMI_SETUP, MFHI1_9 MFLO1_14)
+KERNEL(k_div1_lw, 16, MMI_SETUP,
+       DIV1_12_13 "lw $9, 0($24)\n" "lw $14, 4($24)\n" "lw $9, 8($24)\n"
+       "lw $14, 12($24)\n" "lw $9, 16($24)\n" "lw $14, 20($24)\n"
+       "lw $9, 24($24)\n" "lw $14, 28($24)\n" "lw $9, 32($24)\n"
+       "lw $14, 36($24)\n")
+KERNEL(k_div1_addu, 16, MMI_SETUP,
+       DIV1_12_13 "addu $9, $10, $11\n" "addu $14, $10, $11\n"
+       "addu $9, $10, $11\n" "addu $14, $10, $11\n" "addu $9, $10, $11\n"
+       "addu $14, $10, $11\n" "addu $9, $10, $11\n" "addu $14, $10, $11\n"
+       "addu $9, $10, $11\n" "addu $14, $10, $11\n")
+KERNEL(k_div1_mult1, 16, MMI_SETUP, DIV1_12_13 MULT1(10, 12, 13))
+// Why mult1|lw,addu|lw takes 4: mult1 without rd, a load one or two pairs
+// after mult1, and the same for the pipe 0 mult.
+KERNEL(k_mult1z_lw, 64, MMI_SETUP,
+       MULT1_ACC_12 "lw $11, 0($24)\n" "addu $9, $12, $13\n"
+       "lw $14, 4($24)\n")
+KERNEL(k_mult1_addu_lw, 64, MMI_SETUP,
+       MULT1(10, 12, 13) "addu $11, $12, $13\n" "lw $9, 0($24)\n"
+       "addu $14, $12, $13\n")
+KERNEL(k_mult1_addu_x2_lw, 64, MMI_SETUP,
+       MULT1(10, 12, 13) "addu $11, $12, $13\n" "addu $9, $12, $13\n"
+       "addu $14, $12, $13\n" "lw $15, 0($24)\n" "addu $25, $12, $13\n")
+KERNEL(k_mult_addu_lw, 64, MMI_SETUP,
+       MULT3(10, 12, 13) "addu $11, $12, $13\n" "lw $9, 0($24)\n"
+       "addu $14, $12, $13\n")
+KERNEL(k_mult1_sw_x1, 64, MMI_SETUP,
+       MULT1(10, 12, 13) "addu $11, $12, $13\n" "sw $12, 0($24)\n"
+       "addu $14, $12, $13\n")
+KERNEL(k_mflo1_x1, 64, MMI_SETUP, MFLO1_9)
+KERNEL(k_mflo1_addu, 64, MMI_SETUP, MFLO1_9 "addu $11, $12, $13\n")
+// A dot product step: 2 loads + multiply-add, on one or both accumulators.
+KERNEL(k_dot_madd, 16, MMI_SETUP,
+       "lw $8, 0($24)\n" "lw $9, 4($24)\n" MADD_ACC "lw $10, 8($24)\n"
+       "lw $11, 12($24)\n" MADD_ACC)
+KERNEL(k_dot_madd_madd1, 16, MMI_SETUP,
+       "lw $8, 0($24)\n" "lw $9, 4($24)\n" MADD_ACC "lw $10, 8($24)\n"
+       "lw $11, 12($24)\n" MADD1_ACC)
 KERNEL(k_pmaddh_pcpyld, 64, MMI_SETUP, PMADDH(0, 10, 11) PCPYLD(9, 12, 13))
 KERNEL(k_phmadh_rd, 64, MMI_SETUP, PHMADH(9, 9, 11))
 KERNEL(k_phmadh_paddw, 64, MMI_SETUP, PHMADH(9, 12, 13) PADDW(10, 10, 9))
@@ -1283,6 +1343,28 @@ void uarch_run_all(u32 *big, int big_words) {
         {"pmaddh rd->rs", k_pmaddh_rd, 64, "instr", "?"},
         {"pmaddh+pmflo", k_pmaddh_pmflo, 64, "2instr", "?"},
         {"pmaddh|ldl", k_pmaddh_ldl, 64, "pair", "= pmaddh: paired"},
+        {"mult1|lw,addu|lw", k_mult1_lw, 64, "rep", "2 = paired, 3 = not"},
+        {"lw|mult1,addu|lw", k_lw_mult1, 64, "rep", "2 = paired, 3 = not"},
+        {"mult|lw,addu|lw", k_mult3_lw, 64, "rep", "2 = paired, 3 = not"},
+        {"mult1|sw,addu|sw", k_mult1_sw, 64, "rep", "2 = paired, 3 = not"},
+        {"mult1|addu,addu|addu", k_mult1_addu, 64, "rep",
+         "2 = paired, 3 = not"},
+        {"mflo1|lw", k_mflo1_lw, 64, "pair", "1 = paired"},
+        {"mflo|lw", k_mflo_lw, 64, "pair", "1 = paired"},
+        {"mfhi1|mflo1", k_mfhi1_mflo1, 64, "pair", "1 = paired"},
+        {"div1,lw x10", k_div1_lw, 16, "group", "= div1: LS not blocked"},
+        {"div1,addu x10", k_div1_addu, 16, "group", "= div1: ALU not blocked"},
+        {"div1|mult1", k_div1_mult1, 16, "pair", "= div1: MAC1 busy"},
+        {"mult1 $0|lw,addu|lw", k_mult1z_lw, 64, "rep", "2 = paired, 3 = not"},
+        {"mult1|addu,lw|addu", k_mult1_addu_lw, 64, "rep", "2 = lw not held"},
+        {"mult1|addu,2 addu,lw|addu", k_mult1_addu_x2_lw, 64, "rep",
+         "3 = lw not held"},
+        {"mult|addu,lw|addu", k_mult_addu_lw, 64, "rep", "2 = lw not held"},
+        {"mult1|addu,sw|addu", k_mult1_sw_x1, 64, "rep", "2 = sw not held"},
+        {"mflo1", k_mflo1_x1, 64, "instr", "throughput"},
+        {"mflo1|addu", k_mflo1_addu, 64, "pair", "1 = paired"},
+        {"dot: 4 lw, 2 madd", k_dot_madd, 16, "rep", "?"},
+        {"dot: 4 lw, madd+madd1", k_dot_madd_madd1, 16, "rep", "?"},
         {"pmaddh|pcpyld", k_pmaddh_pcpyld, 64, "pair", "= pmaddh: paired"},
         {"phmadh rd->rs", k_phmadh_rd, 64, "instr", "?"},
         {"phmadh+paddw", k_phmadh_paddw, 64, "2instr", "paddw chain"},
