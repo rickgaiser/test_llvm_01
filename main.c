@@ -7,6 +7,7 @@
 #include "stream_tests.h"
 #include "uarch_tests.h"
 #include "app_tests.h"
+#include "shuffle_tests.h"
 
 #define NUM_ITERATIONS 100000
 
@@ -577,6 +578,8 @@ int main() {
     printf("--- Stream SAXPY ---\n");
     printf("Result: %u\n", check);
     printf("Performance: %.2f MB/s\n\n", mbs_saxpy);
+
+    shuffle_checks();
 
     // === Application kernels ===
     app_run_all();
