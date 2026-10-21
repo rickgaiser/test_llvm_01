@@ -67,6 +67,35 @@ static u32 clut8(void) {
     return app_hash(frame, sizeof(frame));
 }
 
+// A quarter of the sprite pixels are the transparent key color
+#define COLOR_KEY 0x00ff00ffu
+
+static void init_keyed(void) {
+    for (int i = 0; i < SPR_PIXELS; i++) {
+        u32 r = app_rand();
+        sprite[i] = (r & 3) ? app_rand() : COLOR_KEY;
+        frame[i] = app_rand();
+    }
+}
+
+// Composite a sprite over the frame except for its transparent key color
+static u32 color_key(void) {
+    for (int i = 0; i < SPR_PIXELS; i++) {
+        u32 s = sprite[i], d = frame[i];
+        scaled[i] = s == COLOR_KEY ? d : s;
+    }
+    return app_hash(scaled, SPR_PIXELS * sizeof(u32));
+}
+
+// Composite the sprite pixels with an alpha of at least 0x40 over the frame
+static u32 alpha_test(void) {
+    for (int i = 0; i < SPR_PIXELS; i++) {
+        u32 s = sprite[i], d = frame[i];
+        scaled[i] = (s >> 24) >= 0x40 ? s : d;
+    }
+    return app_hash(scaled, SPR_PIXELS * sizeof(u32));
+}
+
 // Convert 32-bit pixels to the 16-bit GS PSMCT16 format (RGBA5551)
 static u32 to_ct16(void) {
     for (int i = 0; i < SPR_PIXELS; i++) {
@@ -95,6 +124,8 @@ static u32 scale_nn(void) {
 static const app_test gfx_tests[] = {
     {"Alpha Blend", "Mpix/s", SPR_PIXELS, init_sprite, alpha_blend},
     {"CLUT8", "Mpix/s", SPR_PIXELS, init_indexed, clut8},
+    {"Color Key", "Mpix/s", SPR_PIXELS, init_keyed, color_key},
+    {"Alpha Test", "Mpix/s", SPR_PIXELS, init_sprite, alpha_test},
     {"To CT16", "Mpix/s", SPR_PIXELS, init_sprite, to_ct16},
     {"Scale NN", "Mpix/s", SCALED_W * SCALED_H, init_sprite, scale_nn},
 };
