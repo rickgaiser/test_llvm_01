@@ -491,6 +491,383 @@ KERNEL(k_vadd_lqc2, 64, VU0_SETUP, VADD_3 LQC2_7)
 KERNEL(k_vadd_mul_s, 64, VU0_SETUP, VADD_3 "mul.s $f0, $f8, $f9\n")
 KERNEL(k_vadd_paddw, 64, VU0_SETUP, VADD_3 PADDW(9, 12, 13))
 
+// STREAM Sum loop bodies: each load is followed by the add of the load LAG
+// loads before it (the compiler emits LAG 2 without and LAG 1 with partial
+// unrolling), for 1 or 2 cache lines per iteration.
+#define SUM_L1_LAG1 \
+    "lw $13, 0($8)\n" "lw $14, 4($8)\n" "addu $9, $9, $13\n" \
+    "lw $13, 8($8)\n" "addu $10, $10, $14\n" "lw $14, 12($8)\n" \
+    "addu $11, $11, $13\n" "lw $13, 16($8)\n" "addu $12, $12, $14\n" \
+    "lw $14, 20($8)\n" "addu $9, $9, $13\n" "lw $13, 24($8)\n" \
+    "addu $10, $10, $14\n" "lw $14, 28($8)\n" "addu $11, $11, $13\n" \
+    "lw $13, 32($8)\n" "addu $12, $12, $14\n" "lw $14, 36($8)\n" \
+    "addu $9, $9, $13\n" "lw $13, 40($8)\n" "addu $10, $10, $14\n" \
+    "lw $14, 44($8)\n" "addu $11, $11, $13\n" "lw $13, 48($8)\n" \
+    "addu $12, $12, $14\n" "lw $14, 52($8)\n" "addu $9, $9, $13\n" \
+    "lw $13, 56($8)\n" "addu $10, $10, $14\n" "lw $14, 60($8)\n" \
+    "addu $11, $11, $13\n" "addu $12, $12, $14\n" "addiu $8, $8, 64\n"
+#define SUM_L1_LAG2 \
+    "lw $13, 0($8)\n" "lw $14, 4($8)\n" "lw $15, 8($8)\n" \
+    "addu $9, $9, $13\n" "lw $13, 12($8)\n" "addu $10, $10, $14\n" \
+    "lw $14, 16($8)\n" "addu $11, $11, $15\n" "lw $15, 20($8)\n" \
+    "addu $12, $12, $13\n" "lw $13, 24($8)\n" "addu $9, $9, $14\n" \
+    "lw $14, 28($8)\n" "addu $10, $10, $15\n" "lw $15, 32($8)\n" \
+    "addu $11, $11, $13\n" "lw $13, 36($8)\n" "addu $12, $12, $14\n" \
+    "lw $14, 40($8)\n" "addu $9, $9, $15\n" "lw $15, 44($8)\n" \
+    "addu $10, $10, $13\n" "lw $13, 48($8)\n" "addu $11, $11, $14\n" \
+    "lw $14, 52($8)\n" "addu $12, $12, $15\n" "lw $15, 56($8)\n" \
+    "addu $9, $9, $13\n" "lw $13, 60($8)\n" "addu $10, $10, $14\n" \
+    "addu $11, $11, $15\n" "addu $12, $12, $13\n" "addiu $8, $8, 64\n"
+#define SUM_L1_LAG3 \
+    "lw $13, 0($8)\n" "lw $14, 4($8)\n" "lw $15, 8($8)\n" \
+    "lw $24, 12($8)\n" "addu $9, $9, $13\n" "lw $13, 16($8)\n" \
+    "addu $10, $10, $14\n" "lw $14, 20($8)\n" "addu $11, $11, $15\n" \
+    "lw $15, 24($8)\n" "addu $12, $12, $24\n" "lw $24, 28($8)\n" \
+    "addu $9, $9, $13\n" "lw $13, 32($8)\n" "addu $10, $10, $14\n" \
+    "lw $14, 36($8)\n" "addu $11, $11, $15\n" "lw $15, 40($8)\n" \
+    "addu $12, $12, $24\n" "lw $24, 44($8)\n" "addu $9, $9, $13\n" \
+    "lw $13, 48($8)\n" "addu $10, $10, $14\n" "lw $14, 52($8)\n" \
+    "addu $11, $11, $15\n" "lw $15, 56($8)\n" "addu $12, $12, $24\n" \
+    "lw $24, 60($8)\n" "addu $9, $9, $13\n" "addu $10, $10, $14\n" \
+    "addu $11, $11, $15\n" "addu $12, $12, $24\n" "addiu $8, $8, 64\n"
+#define SUM_L1_LAG4 \
+    "lw $13, 0($8)\n" "lw $14, 4($8)\n" "lw $15, 8($8)\n" \
+    "lw $24, 12($8)\n" "lw $25, 16($8)\n" "addu $9, $9, $13\n" \
+    "lw $13, 20($8)\n" "addu $10, $10, $14\n" "lw $14, 24($8)\n" \
+    "addu $11, $11, $15\n" "lw $15, 28($8)\n" "addu $12, $12, $24\n" \
+    "lw $24, 32($8)\n" "addu $9, $9, $25\n" "lw $25, 36($8)\n" \
+    "addu $10, $10, $13\n" "lw $13, 40($8)\n" "addu $11, $11, $14\n" \
+    "lw $14, 44($8)\n" "addu $12, $12, $15\n" "lw $15, 48($8)\n" \
+    "addu $9, $9, $24\n" "lw $24, 52($8)\n" "addu $10, $10, $25\n" \
+    "lw $25, 56($8)\n" "addu $11, $11, $13\n" "lw $13, 60($8)\n" \
+    "addu $12, $12, $14\n" "addu $9, $9, $15\n" "addu $10, $10, $24\n" \
+    "addu $11, $11, $25\n" "addu $12, $12, $13\n" "addiu $8, $8, 64\n"
+#define SUM_L2_LAG1 \
+    "lw $13, 0($8)\n" "lw $14, 4($8)\n" "addu $9, $9, $13\n" \
+    "lw $13, 8($8)\n" "addu $10, $10, $14\n" "lw $14, 12($8)\n" \
+    "addu $11, $11, $13\n" "lw $13, 16($8)\n" "addu $12, $12, $14\n" \
+    "lw $14, 20($8)\n" "addu $9, $9, $13\n" "lw $13, 24($8)\n" \
+    "addu $10, $10, $14\n" "lw $14, 28($8)\n" "addu $11, $11, $13\n" \
+    "lw $13, 32($8)\n" "addu $12, $12, $14\n" "lw $14, 36($8)\n" \
+    "addu $9, $9, $13\n" "lw $13, 40($8)\n" "addu $10, $10, $14\n" \
+    "lw $14, 44($8)\n" "addu $11, $11, $13\n" "lw $13, 48($8)\n" \
+    "addu $12, $12, $14\n" "lw $14, 52($8)\n" "addu $9, $9, $13\n" \
+    "lw $13, 56($8)\n" "addu $10, $10, $14\n" "lw $14, 60($8)\n" \
+    "addu $11, $11, $13\n" "lw $13, 64($8)\n" "addu $12, $12, $14\n" \
+    "lw $14, 68($8)\n" "addu $9, $9, $13\n" "lw $13, 72($8)\n" \
+    "addu $10, $10, $14\n" "lw $14, 76($8)\n" "addu $11, $11, $13\n" \
+    "lw $13, 80($8)\n" "addu $12, $12, $14\n" "lw $14, 84($8)\n" \
+    "addu $9, $9, $13\n" "lw $13, 88($8)\n" "addu $10, $10, $14\n" \
+    "lw $14, 92($8)\n" "addu $11, $11, $13\n" "lw $13, 96($8)\n" \
+    "addu $12, $12, $14\n" "lw $14, 100($8)\n" "addu $9, $9, $13\n" \
+    "lw $13, 104($8)\n" "addu $10, $10, $14\n" "lw $14, 108($8)\n" \
+    "addu $11, $11, $13\n" "lw $13, 112($8)\n" "addu $12, $12, $14\n" \
+    "lw $14, 116($8)\n" "addu $9, $9, $13\n" "lw $13, 120($8)\n" \
+    "addu $10, $10, $14\n" "lw $14, 124($8)\n" "addu $11, $11, $13\n" \
+    "addu $12, $12, $14\n" "addiu $8, $8, 128\n"
+#define SUM_L2_LAG2 \
+    "lw $13, 0($8)\n" "lw $14, 4($8)\n" "lw $15, 8($8)\n" \
+    "addu $9, $9, $13\n" "lw $13, 12($8)\n" "addu $10, $10, $14\n" \
+    "lw $14, 16($8)\n" "addu $11, $11, $15\n" "lw $15, 20($8)\n" \
+    "addu $12, $12, $13\n" "lw $13, 24($8)\n" "addu $9, $9, $14\n" \
+    "lw $14, 28($8)\n" "addu $10, $10, $15\n" "lw $15, 32($8)\n" \
+    "addu $11, $11, $13\n" "lw $13, 36($8)\n" "addu $12, $12, $14\n" \
+    "lw $14, 40($8)\n" "addu $9, $9, $15\n" "lw $15, 44($8)\n" \
+    "addu $10, $10, $13\n" "lw $13, 48($8)\n" "addu $11, $11, $14\n" \
+    "lw $14, 52($8)\n" "addu $12, $12, $15\n" "lw $15, 56($8)\n" \
+    "addu $9, $9, $13\n" "lw $13, 60($8)\n" "addu $10, $10, $14\n" \
+    "lw $14, 64($8)\n" "addu $11, $11, $15\n" "lw $15, 68($8)\n" \
+    "addu $12, $12, $13\n" "lw $13, 72($8)\n" "addu $9, $9, $14\n" \
+    "lw $14, 76($8)\n" "addu $10, $10, $15\n" "lw $15, 80($8)\n" \
+    "addu $11, $11, $13\n" "lw $13, 84($8)\n" "addu $12, $12, $14\n" \
+    "lw $14, 88($8)\n" "addu $9, $9, $15\n" "lw $15, 92($8)\n" \
+    "addu $10, $10, $13\n" "lw $13, 96($8)\n" "addu $11, $11, $14\n" \
+    "lw $14, 100($8)\n" "addu $12, $12, $15\n" "lw $15, 104($8)\n" \
+    "addu $9, $9, $13\n" "lw $13, 108($8)\n" "addu $10, $10, $14\n" \
+    "lw $14, 112($8)\n" "addu $11, $11, $15\n" "lw $15, 116($8)\n" \
+    "addu $12, $12, $13\n" "lw $13, 120($8)\n" "addu $9, $9, $14\n" \
+    "lw $14, 124($8)\n" "addu $10, $10, $15\n" "addu $11, $11, $13\n" \
+    "addu $12, $12, $14\n" "addiu $8, $8, 128\n"
+#define SUM_L2_LAG3 \
+    "lw $13, 0($8)\n" "lw $14, 4($8)\n" "lw $15, 8($8)\n" \
+    "lw $24, 12($8)\n" "addu $9, $9, $13\n" "lw $13, 16($8)\n" \
+    "addu $10, $10, $14\n" "lw $14, 20($8)\n" "addu $11, $11, $15\n" \
+    "lw $15, 24($8)\n" "addu $12, $12, $24\n" "lw $24, 28($8)\n" \
+    "addu $9, $9, $13\n" "lw $13, 32($8)\n" "addu $10, $10, $14\n" \
+    "lw $14, 36($8)\n" "addu $11, $11, $15\n" "lw $15, 40($8)\n" \
+    "addu $12, $12, $24\n" "lw $24, 44($8)\n" "addu $9, $9, $13\n" \
+    "lw $13, 48($8)\n" "addu $10, $10, $14\n" "lw $14, 52($8)\n" \
+    "addu $11, $11, $15\n" "lw $15, 56($8)\n" "addu $12, $12, $24\n" \
+    "lw $24, 60($8)\n" "addu $9, $9, $13\n" "lw $13, 64($8)\n" \
+    "addu $10, $10, $14\n" "lw $14, 68($8)\n" "addu $11, $11, $15\n" \
+    "lw $15, 72($8)\n" "addu $12, $12, $24\n" "lw $24, 76($8)\n" \
+    "addu $9, $9, $13\n" "lw $13, 80($8)\n" "addu $10, $10, $14\n" \
+    "lw $14, 84($8)\n" "addu $11, $11, $15\n" "lw $15, 88($8)\n" \
+    "addu $12, $12, $24\n" "lw $24, 92($8)\n" "addu $9, $9, $13\n" \
+    "lw $13, 96($8)\n" "addu $10, $10, $14\n" "lw $14, 100($8)\n" \
+    "addu $11, $11, $15\n" "lw $15, 104($8)\n" "addu $12, $12, $24\n" \
+    "lw $24, 108($8)\n" "addu $9, $9, $13\n" "lw $13, 112($8)\n" \
+    "addu $10, $10, $14\n" "lw $14, 116($8)\n" "addu $11, $11, $15\n" \
+    "lw $15, 120($8)\n" "addu $12, $12, $24\n" "lw $24, 124($8)\n" \
+    "addu $9, $9, $13\n" "addu $10, $10, $14\n" "addu $11, $11, $15\n" \
+    "addu $12, $12, $24\n" "addiu $8, $8, 128\n"
+#define SUM_L2_LAG4 \
+    "lw $13, 0($8)\n" "lw $14, 4($8)\n" "lw $15, 8($8)\n" \
+    "lw $24, 12($8)\n" "lw $25, 16($8)\n" "addu $9, $9, $13\n" \
+    "lw $13, 20($8)\n" "addu $10, $10, $14\n" "lw $14, 24($8)\n" \
+    "addu $11, $11, $15\n" "lw $15, 28($8)\n" "addu $12, $12, $24\n" \
+    "lw $24, 32($8)\n" "addu $9, $9, $25\n" "lw $25, 36($8)\n" \
+    "addu $10, $10, $13\n" "lw $13, 40($8)\n" "addu $11, $11, $14\n" \
+    "lw $14, 44($8)\n" "addu $12, $12, $15\n" "lw $15, 48($8)\n" \
+    "addu $9, $9, $24\n" "lw $24, 52($8)\n" "addu $10, $10, $25\n" \
+    "lw $25, 56($8)\n" "addu $11, $11, $13\n" "lw $13, 60($8)\n" \
+    "addu $12, $12, $14\n" "lw $14, 64($8)\n" "addu $9, $9, $15\n" \
+    "lw $15, 68($8)\n" "addu $10, $10, $24\n" "lw $24, 72($8)\n" \
+    "addu $11, $11, $25\n" "lw $25, 76($8)\n" "addu $12, $12, $13\n" \
+    "lw $13, 80($8)\n" "addu $9, $9, $14\n" "lw $14, 84($8)\n" \
+    "addu $10, $10, $15\n" "lw $15, 88($8)\n" "addu $11, $11, $24\n" \
+    "lw $24, 92($8)\n" "addu $12, $12, $25\n" "lw $25, 96($8)\n" \
+    "addu $9, $9, $13\n" "lw $13, 100($8)\n" "addu $10, $10, $14\n" \
+    "lw $14, 104($8)\n" "addu $11, $11, $15\n" "lw $15, 108($8)\n" \
+    "addu $12, $12, $24\n" "lw $24, 112($8)\n" "addu $9, $9, $25\n" \
+    "lw $25, 116($8)\n" "addu $10, $10, $13\n" "lw $13, 120($8)\n" \
+    "addu $11, $11, $14\n" "lw $14, 124($8)\n" "addu $12, $12, $15\n" \
+    "addu $9, $9, $24\n" "addu $10, $10, $25\n" "addu $11, $11, $13\n" \
+    "addu $12, $12, $14\n" "addiu $8, $8, 128\n"
+
+// As KERNEL, but the loop starts pad words after a 64-byte boundary.
+#define KERNEL_PAD(name, setup, body, pad)                                 \
+    static u32 name(u32 *p, int iters) {                                   \
+        u32 t0, t1;                                                        \
+        __asm__ __volatile__(                                              \
+            ".set push\n.set noreorder\n.set noat\n"                       \
+            setup                                                          \
+            "mfc0 %0, $9\n"                                                \
+            ".align 6\n"                                                   \
+            ".rept " #pad "\nnop\n.endr\n"                                  \
+            "1:\n" body                                                    \
+            "addiu %2, %2, -1\n"                                           \
+            "bnez %2, 1b\n"                                                \
+            "nop\n"                                                        \
+            "mfc0 %1, $9\n"                                                \
+            ".set pop\n"                                                   \
+            : "=&r"(t0), "=&r"(t1), "+r"(iters)                            \
+            : "r"(p)                                                       \
+            : "memory", "$8", "$9", "$10", "$11", "$12", "$13", "$14",     \
+              "$15", "$24", "$25");                                                      \
+        return t1 - t0;                                                    \
+    }
+
+#define SUM_SETUP                                                     \
+    "move $8, %3\n" "move $9, $0\n" "move $10, $0\n" "move $11, $0\n" \
+    "move $12, $0\n"
+KERNEL_PAD(k_sum1_lag1, SUM_SETUP, SUM_L1_LAG1, 0)
+KERNEL_PAD(k_sum1_lag2, SUM_SETUP, SUM_L1_LAG2, 0)
+KERNEL_PAD(k_sum1_lag3, SUM_SETUP, SUM_L1_LAG3, 0)
+KERNEL_PAD(k_sum1_lag4, SUM_SETUP, SUM_L1_LAG4, 0)
+KERNEL_PAD(k_sum2_lag1, SUM_SETUP, SUM_L2_LAG1, 0)
+KERNEL_PAD(k_sum2_lag2, SUM_SETUP, SUM_L2_LAG2, 0)
+KERNEL_PAD(k_sum2_lag3, SUM_SETUP, SUM_L2_LAG3, 0)
+KERNEL_PAD(k_sum2_lag4, SUM_SETUP, SUM_L2_LAG4, 0)
+
+// The STREAM Sum loops exactly as compiled, without (SUMC_NOUNROLL) and with
+// (SUMC_UNROLL) partial unrolling, in their original registers.
+#define SUMC_NOUNROLL \
+    "lw $1, -32($2)\n" "lw $8, -28($2)\n" "lw $9, -24($2)\n" \
+    "addu $1, $1, $7\n" "lw $7, -20($2)\n" "addu $6, $8, $6\n" \
+    "lw $8, -16($2)\n" "addu $5, $9, $5\n" "lw $9, -12($2)\n" \
+    "addu $4, $7, $4\n" "lw $7, -8($2)\n" "addu $1, $8, $1\n" \
+    "lw $8, -4($2)\n" "addu $6, $9, $6\n" "lw $9, 0($2)\n" \
+    "addu $5, $7, $5\n" "lw $7, 4($2)\n" "addu $4, $8, $4\n" \
+    "lw $8, 8($2)\n" "addu $1, $9, $1\n" "lw $9, 12($2)\n" \
+    "addu $6, $7, $6\n" "lw $7, 16($2)\n" "addu $5, $8, $5\n" \
+    "lw $8, 20($2)\n" "addu $4, $9, $4\n" "lw $9, 24($2)\n" \
+    "addu $7, $7, $1\n" "lw $1, 28($2)\n" "addu $6, $8, $6\n" \
+    "addiu $2, $2, 64\n" "addu $5, $9, $5\n" "bne $2, $3, 2b\n" \
+    "addu $4, $1, $4\n"
+#define SUMC_UNROLL \
+    "lw $1, -64($4)\n" "addiu $3, $3, 32\n" "lw $11, -60($4)\n" \
+    "addu $1, $1, $10\n" "lw $10, -56($4)\n" "addu $9, $11, $9\n" \
+    "lw $11, -52($4)\n" "addu $8, $10, $8\n" "lw $10, -48($4)\n" \
+    "addu $7, $11, $7\n" "lw $11, -44($4)\n" "addu $1, $10, $1\n" \
+    "lw $10, -40($4)\n" "addu $9, $11, $9\n" "lw $11, -36($4)\n" \
+    "addu $8, $10, $8\n" "lw $10, -32($4)\n" "addu $7, $11, $7\n" \
+    "lw $11, -28($4)\n" "addu $1, $10, $1\n" "lw $10, -24($4)\n" \
+    "addu $9, $11, $9\n" "lw $11, -20($4)\n" "addu $8, $10, $8\n" \
+    "lw $10, -16($4)\n" "addu $7, $11, $7\n" "lw $11, -12($4)\n" \
+    "addu $1, $10, $1\n" "lw $10, -8($4)\n" "addu $9, $11, $9\n" \
+    "lw $11, -4($4)\n" "addu $8, $10, $8\n" "lw $10, 0($4)\n" \
+    "addu $7, $11, $7\n" "lw $11, 4($4)\n" "addu $1, $10, $1\n" \
+    "lw $10, 8($4)\n" "addu $9, $11, $9\n" "lw $11, 12($4)\n" \
+    "addu $8, $10, $8\n" "lw $10, 16($4)\n" "addu $7, $11, $7\n" \
+    "lw $11, 20($4)\n" "addu $1, $10, $1\n" "lw $10, 24($4)\n" \
+    "addu $9, $11, $9\n" "lw $11, 28($4)\n" "addu $8, $10, $8\n" \
+    "lw $10, 32($4)\n" "addu $7, $11, $7\n" "lw $11, 36($4)\n" \
+    "addu $1, $10, $1\n" "lw $10, 40($4)\n" "addu $9, $11, $9\n" \
+    "lw $11, 44($4)\n" "addu $8, $10, $8\n" "lw $10, 48($4)\n" \
+    "addu $7, $11, $7\n" "lw $11, 52($4)\n" "addu $10, $10, $1\n" \
+    "lw $1, 56($4)\n" "addu $9, $11, $9\n" "lw $11, 60($4)\n" \
+    "addu $8, $1, $8\n" "addiu $4, $4, 128\n" "bne $4, $6, 2b\n" \
+    "addu $7, $11, $7\n"
+// The remainder counter update replaced by a nop, or moved to the end.
+#define SUMC_UNROLL_NOPFILL \
+    "lw $1, -64($4)\n" "nop\n" "lw $11, -60($4)\n" \
+    "addu $1, $1, $10\n" "lw $10, -56($4)\n" "addu $9, $11, $9\n" \
+    "lw $11, -52($4)\n" "addu $8, $10, $8\n" "lw $10, -48($4)\n" \
+    "addu $7, $11, $7\n" "lw $11, -44($4)\n" "addu $1, $10, $1\n" \
+    "lw $10, -40($4)\n" "addu $9, $11, $9\n" "lw $11, -36($4)\n" \
+    "addu $8, $10, $8\n" "lw $10, -32($4)\n" "addu $7, $11, $7\n" \
+    "lw $11, -28($4)\n" "addu $1, $10, $1\n" "lw $10, -24($4)\n" \
+    "addu $9, $11, $9\n" "lw $11, -20($4)\n" "addu $8, $10, $8\n" \
+    "lw $10, -16($4)\n" "addu $7, $11, $7\n" "lw $11, -12($4)\n" \
+    "addu $1, $10, $1\n" "lw $10, -8($4)\n" "addu $9, $11, $9\n" \
+    "lw $11, -4($4)\n" "addu $8, $10, $8\n" "lw $10, 0($4)\n" \
+    "addu $7, $11, $7\n" "lw $11, 4($4)\n" "addu $1, $10, $1\n" \
+    "lw $10, 8($4)\n" "addu $9, $11, $9\n" "lw $11, 12($4)\n" \
+    "addu $8, $10, $8\n" "lw $10, 16($4)\n" "addu $7, $11, $7\n" \
+    "lw $11, 20($4)\n" "addu $1, $10, $1\n" "lw $10, 24($4)\n" \
+    "addu $9, $11, $9\n" "lw $11, 28($4)\n" "addu $8, $10, $8\n" \
+    "lw $10, 32($4)\n" "addu $7, $11, $7\n" "lw $11, 36($4)\n" \
+    "addu $1, $10, $1\n" "lw $10, 40($4)\n" "addu $9, $11, $9\n" \
+    "lw $11, 44($4)\n" "addu $8, $10, $8\n" "lw $10, 48($4)\n" \
+    "addu $7, $11, $7\n" "lw $11, 52($4)\n" "addu $10, $10, $1\n" \
+    "lw $1, 56($4)\n" "addu $9, $11, $9\n" "lw $11, 60($4)\n" \
+    "addu $8, $1, $8\n" "addiu $4, $4, 128\n" "bne $4, $6, 2b\n" \
+    "addu $7, $11, $7\n"
+#define SUMC_UNROLL_ADDIU_END \
+    "lw $1, -64($4)\n" "lw $11, -60($4)\n" \
+    "addu $1, $1, $10\n" "lw $10, -56($4)\n" "addu $9, $11, $9\n" \
+    "lw $11, -52($4)\n" "addu $8, $10, $8\n" "lw $10, -48($4)\n" \
+    "addu $7, $11, $7\n" "lw $11, -44($4)\n" "addu $1, $10, $1\n" \
+    "lw $10, -40($4)\n" "addu $9, $11, $9\n" "lw $11, -36($4)\n" \
+    "addu $8, $10, $8\n" "lw $10, -32($4)\n" "addu $7, $11, $7\n" \
+    "lw $11, -28($4)\n" "addu $1, $10, $1\n" "lw $10, -24($4)\n" \
+    "addu $9, $11, $9\n" "lw $11, -20($4)\n" "addu $8, $10, $8\n" \
+    "lw $10, -16($4)\n" "addu $7, $11, $7\n" "lw $11, -12($4)\n" \
+    "addu $1, $10, $1\n" "lw $10, -8($4)\n" "addu $9, $11, $9\n" \
+    "lw $11, -4($4)\n" "addu $8, $10, $8\n" "lw $10, 0($4)\n" \
+    "addu $7, $11, $7\n" "lw $11, 4($4)\n" "addu $1, $10, $1\n" \
+    "lw $10, 8($4)\n" "addu $9, $11, $9\n" "lw $11, 12($4)\n" \
+    "addu $8, $10, $8\n" "lw $10, 16($4)\n" "addu $7, $11, $7\n" \
+    "lw $11, 20($4)\n" "addu $1, $10, $1\n" "lw $10, 24($4)\n" \
+    "addu $9, $11, $9\n" "lw $11, 28($4)\n" "addu $8, $10, $8\n" \
+    "lw $10, 32($4)\n" "addu $7, $11, $7\n" "lw $11, 36($4)\n" \
+    "addu $1, $10, $1\n" "lw $10, 40($4)\n" "addu $9, $11, $9\n" \
+    "lw $11, 44($4)\n" "addu $8, $10, $8\n" "lw $10, 48($4)\n" \
+    "addu $7, $11, $7\n" "lw $11, 52($4)\n" "addu $10, $10, $1\n" \
+    "lw $1, 56($4)\n" "addu $9, $11, $9\n" "lw $11, 60($4)\n" \
+    "addu $8, $1, $8\n" "addiu $3, $3, 32\n" "addiu $4, $4, 128\n" "bne $4, $6, 2b\n" \
+    "addu $7, $11, $7\n"
+// Without the remainder counter update that starts the unrolled loop.
+#define SUMC_UNROLL_NOADDIU \
+    "lw $1, -64($4)\n" "lw $11, -60($4)\n" \
+    "addu $1, $1, $10\n" "lw $10, -56($4)\n" "addu $9, $11, $9\n" \
+    "lw $11, -52($4)\n" "addu $8, $10, $8\n" "lw $10, -48($4)\n" \
+    "addu $7, $11, $7\n" "lw $11, -44($4)\n" "addu $1, $10, $1\n" \
+    "lw $10, -40($4)\n" "addu $9, $11, $9\n" "lw $11, -36($4)\n" \
+    "addu $8, $10, $8\n" "lw $10, -32($4)\n" "addu $7, $11, $7\n" \
+    "lw $11, -28($4)\n" "addu $1, $10, $1\n" "lw $10, -24($4)\n" \
+    "addu $9, $11, $9\n" "lw $11, -20($4)\n" "addu $8, $10, $8\n" \
+    "lw $10, -16($4)\n" "addu $7, $11, $7\n" "lw $11, -12($4)\n" \
+    "addu $1, $10, $1\n" "lw $10, -8($4)\n" "addu $9, $11, $9\n" \
+    "lw $11, -4($4)\n" "addu $8, $10, $8\n" "lw $10, 0($4)\n" \
+    "addu $7, $11, $7\n" "lw $11, 4($4)\n" "addu $1, $10, $1\n" \
+    "lw $10, 8($4)\n" "addu $9, $11, $9\n" "lw $11, 12($4)\n" \
+    "addu $8, $10, $8\n" "lw $10, 16($4)\n" "addu $7, $11, $7\n" \
+    "lw $11, 20($4)\n" "addu $1, $10, $1\n" "lw $10, 24($4)\n" \
+    "addu $9, $11, $9\n" "lw $11, 28($4)\n" "addu $8, $10, $8\n" \
+    "lw $10, 32($4)\n" "addu $7, $11, $7\n" "lw $11, 36($4)\n" \
+    "addu $1, $10, $1\n" "lw $10, 40($4)\n" "addu $9, $11, $9\n" \
+    "lw $11, 44($4)\n" "addu $8, $10, $8\n" "lw $10, 48($4)\n" \
+    "addu $7, $11, $7\n" "lw $11, 52($4)\n" "addu $10, $10, $1\n" \
+    "lw $1, 56($4)\n" "addu $9, $11, $9\n" "lw $11, 60($4)\n" \
+    "addu $8, $1, $8\n" "addiu $4, $4, 128\n" "bne $4, $6, 2b\n" \
+    "addu $7, $11, $7\n"
+
+// Runs loop once over n lines; setup sets up its pointer and end registers.
+#define KERNEL_RAW(name, setup, loop)                                      \
+    static u32 name(u32 *p, int n) {                                      \
+        u32 t0, t1;                                                        \
+        __asm__ __volatile__(                                              \
+            ".set push\n.set noreorder\n.set noat\n"                       \
+            setup                                                          \
+            "mfc0 %0, $9\n"                                                \
+            ".align 3\n"                                                   \
+            "2:\n" loop                                                    \
+            "mfc0 %1, $9\n"                                                \
+            ".set pop\n"                                                   \
+            : "=&r"(t0), "=&r"(t1)                                         \
+            : "r"(p), "r"(n)                                               \
+            : "memory", "$1", "$2", "$3", "$4", "$5", "$6", "$7", "$8",    \
+              "$9", "$10", "$11");                                         \
+        return t1 - t0;                                                    \
+    }
+
+// As KERNEL_RAW, but the loop starts at an odd word (the nop runs once).
+#define KERNEL_RAW_ODD(name, setup, loop)                                      \
+    static u32 name(u32 *p, int n) {                                      \
+        u32 t0, t1;                                                        \
+        __asm__ __volatile__(                                              \
+            ".set push\n.set noreorder\n.set noat\n"                       \
+            setup                                                          \
+            "mfc0 %0, $9\n"                                                \
+            ".align 3\n" "nop\n"                                        \
+            "2:\n" loop                                                    \
+            "mfc0 %1, $9\n"                                                \
+            ".set pop\n"                                                   \
+            : "=&r"(t0), "=&r"(t1)                                         \
+            : "r"(p), "r"(n)                                               \
+            : "memory", "$1", "$2", "$3", "$4", "$5", "$6", "$7", "$8",    \
+              "$9", "$10", "$11");                                         \
+        return t1 - t0;                                                    \
+    }
+
+// No unroll: $2 = p + 32 walks the lines, $3 = its end, $4-$7 are the sums.
+// Unrolled: $4 = p + 64 walks pairs of lines, $6 = its end, $1 and $7-$10
+// are the sums.
+#define SUMC_UNROLL_SETUP                                               \
+    "addiu $4, %2, 64\n" "sll $6, %3, 6\n" "addu $6, $6, $4\n"            \
+    "move $3, $0\n" "move $7, $0\n" "move $8, $0\n" "move $9, $0\n"      \
+    "move $10, $0\n"
+#define SUMC_NOUNROLL_SETUP                                             \
+    "addiu $2, %2, 32\n" "sll $3, %3, 6\n" "addu $3, $3, $2\n"            \
+    "move $4, $0\n" "move $5, $0\n" "move $6, $0\n" "move $7, $0\n"
+KERNEL_RAW(k_sumc_nounroll, SUMC_NOUNROLL_SETUP, SUMC_NOUNROLL)
+KERNEL_RAW(k_sumc_unroll, SUMC_UNROLL_SETUP, SUMC_UNROLL)
+KERNEL_RAW(k_sumc_unroll_noaddiu, SUMC_UNROLL_SETUP, SUMC_UNROLL_NOADDIU)
+// A nop at the start of the loop shifts which instructions issue together.
+KERNEL_RAW(k_sumc_unroll_nop, SUMC_UNROLL_SETUP, "nop\n" SUMC_UNROLL)
+KERNEL_RAW(k_sumc_nounroll_nop, SUMC_NOUNROLL_SETUP, "nop\n" SUMC_NOUNROLL)
+KERNEL_RAW_ODD(k_sumc_unroll_odd, SUMC_UNROLL_SETUP, SUMC_UNROLL)
+KERNEL_RAW(k_sumc_unroll_nopfill, SUMC_UNROLL_SETUP, SUMC_UNROLL_NOPFILL)
+KERNEL_RAW(k_sumc_unroll_addiu_end, SUMC_UNROLL_SETUP, SUMC_UNROLL_ADDIU_END)
+KERNEL_RAW_ODD(k_sumc_nounroll_odd, SUMC_NOUNROLL_SETUP, SUMC_NOUNROLL)
+
+// --- Issue pairing of aligned 8-byte blocks ---
+// T3: a load and its use share a block, then a block of 2 independent ALU ops.
+// 4 cycles if only the 2 instructions of an aligned block issue together, 3 if
+// any 2 consecutive instructions can.
+#define T3 "lw $9, 0($24)\n" "addu $10, $9, $11\n" "addu $12, $13, $14\n" \
+           "addu $15, $13, $14\n"
+// T7: 4 cycles if a block's first instruction issues alone when its second is
+// not ready, 5 if the block waits as a whole.
+#define T7 "lw $9, 0($24)\n" "nop\n" "lw $12, 4($24)\n" "addu $10, $9, $11\n" \
+           "addu $13, $12, $11\n" "nop\n"
+#define REP64(x) ".rept 64\n" x ".endr\n"
+KERNEL_PAD(k_t3_even, MMI_SETUP, REP64(T3), 0)
+KERNEL_PAD(k_t3_odd, MMI_SETUP, REP64(T3), 1)
+KERNEL_PAD(k_t7_even, MMI_SETUP, REP64(T7), 0)
+KERNEL_PAD(k_t7_odd, MMI_SETUP, REP64(T7), 1)
+
+// Loops of N pairable blocks [addu | lw] plus addiu, bnez, nop: the branch
+// and its delay slot are in different blocks, or (with a nop added) the same.
+#define PAIRS8 ".rept 8\n" "addu $10, $12, $13\n" "lw $9, 0($24)\n" ".endr\n"
+#define PAIRS32 ".rept 32\n" "addu $10, $12, $13\n" "lw $9, 0($24)\n" ".endr\n"
+KERNEL(k_loop8, 1, MMI_SETUP, PAIRS8)
+KERNEL(k_loop8_nop, 1, MMI_SETUP, PAIRS8 "nop\n")
+KERNEL(k_loop32, 1, MMI_SETUP, PAIRS32)
+KERNEL(k_loop32_nop, 1, MMI_SETUP, PAIRS32 "nop\n")
+
 typedef u32 (*kernel_fn)(u32 *p, int iters);
 
 typedef struct {
@@ -779,6 +1156,18 @@ void uarch_run_all(u32 *big, int big_words) {
               sizeof(intx) / sizeof(intx[0]), buf);
     run_table("FPU min/max/rsqrt, compare to branch, branches", fpbr,
               sizeof(fpbr) / sizeof(fpbr[0]), buf);
+    static const uarch_test issue[] = {
+        {"T3, even", k_t3_even, 64, "rep", "4 = aligned blocks, 3 = sliding"},
+        {"T3, odd", k_t3_odd, 64, "rep", "3"},
+        {"T7, even", k_t7_even, 64, "rep", "4 = first issues alone, 5 = waits"},
+        {"T7, odd", k_t7_odd, 64, "rep", "?"},
+        {"loop 8 pairs", k_loop8, 1, "iter", "branch, delay slot in 2 blocks"},
+        {"loop 8 pairs + nop", k_loop8_nop, 1, "iter", "in 1 block"},
+        {"loop 32 pairs", k_loop32, 1, "iter", "branch, delay slot in 2 blocks"},
+        {"loop 32 pairs + nop", k_loop32_nop, 1, "iter", "in 1 block"},
+    };
+    run_table("Issue pairing of aligned 8-byte blocks", issue,
+              sizeof(issue) / sizeof(issue[0]), buf);
     u32 status;
     __asm__ __volatile__("mfc0 %0, $12" : "=r"(status));
     if (status & (1u << 30))  // Status.CU2
@@ -810,6 +1199,48 @@ void uarch_run_all(u32 *big, int big_words) {
                "line", "pref after the first load");
     print_line("pf end, 8 lw,8 use", run(k_pf_end_use8, big, lines, 1), "line",
                "pref after the line's loads");
+    printf("--- STREAM Sum loop, load to add distance (cyc/line) ---\n");
+    static const struct {
+        const char *name;
+        kernel_fn fn;
+        int lines;
+    } sums[] = {
+        {"1 line, add lags 1 load", k_sum1_lag1, 1},
+        {"1 line, add lags 2 loads", k_sum1_lag2, 1},
+        {"1 line, add lags 3 loads", k_sum1_lag3, 1},
+        {"1 line, add lags 4 loads", k_sum1_lag4, 1},
+        {"2 lines, add lags 1 load", k_sum2_lag1, 2},
+        {"2 lines, add lags 2 loads", k_sum2_lag2, 2},
+        {"2 lines, add lags 3 loads", k_sum2_lag3, 2},
+        {"2 lines, add lags 4 loads", k_sum2_lag4, 2},
+    };
+    for (unsigned i = 0; i < sizeof(sums) / sizeof(sums[0]); i++)
+        print_line(sums[i].name,
+                   run(sums[i].fn, big, lines / sums[i].lines, sums[i].lines),
+                   "line", "16 lw+addu per line, not cached");
+    print_line("compiled, no unroll", run(k_sumc_nounroll, big, lines, 1),
+               "line", "sum_pf0 loop as compiled");
+    print_line("compiled, unrolled", run(k_sumc_unroll, big, lines, 1),
+               "line", "sum_pf0 loop, partial unrolling");
+    print_line("unrolled, no addiu", run(k_sumc_unroll_noaddiu, big, lines, 1),
+               "line", "without the remainder counter");
+    print_line("unrolled, nop first", run(k_sumc_unroll_nop, big, lines, 1),
+               "line", "pairing shifted by one");
+    print_line("no unroll, nop first", run(k_sumc_nounroll_nop, big, lines, 1),
+               "line", "pairing shifted by one");
+    print_line("unrolled, odd word", run(k_sumc_unroll_odd, big, lines, 1),
+               "line", "same code, loop at an odd word");
+    print_line("unrolled, addiu->nop", run(k_sumc_unroll_nopfill, big, lines, 1),
+               "line", "same slots, nop instead of addiu");
+    print_line("unrolled, addiu at end", run(k_sumc_unroll_addiu_end, big, lines, 1),
+               "line", "addiu moved to the end");
+    print_line("no unroll, odd word", run(k_sumc_nounroll_odd, big, lines, 1),
+               "line", "same code, loop at an odd word");
+    // 64 lines (4 KB) that stay in the data cache
+    print_line("unrolled, cached", run(k_sumc_unroll, big, 64, 1), "line",
+               "in cache");
+    print_line("unrolled+nop, cached", run(k_sumc_unroll_nop, big, 64, 1),
+               "line", "in cache");
     printf("--- Overlapping misses (cyc/iteration) ---\n");
     print_line("1 miss", run(k_miss1, big, lines / 2, 1), "iter",
                "one load miss");
