@@ -69,12 +69,9 @@ static float stream_mbs(u64 ticks, int bytes_per_elem) {
     return ((float)bytes_per_elem * STREAM_INTS * STREAM_PASSES) / usec;
 }
 
-static void print_stream(const char *kernel, int dist, float mbs) {
+static void print_stream(const char *kernel, float mbs) {
     char name[32];
-    if (dist)
-        snprintf(name, sizeof(name), "%s PF%d:", kernel, dist);
-    else
-        snprintf(name, sizeof(name), "%s:", kernel);
+    snprintf(name, sizeof(name), "%s:", kernel);
     printf("  %-15s %7.2f MB/s\n", name, mbs);
 }
 
@@ -542,49 +539,43 @@ int main() {
         stream_y[i] = 1.0f;
     }
 
-    float mbs_sum[STREAM_NUM_DISTS], mbs_scale[STREAM_NUM_DISTS];
-    float mbs_saxpy[STREAM_NUM_DISTS];
-    for (int d = 0; d < STREAM_NUM_DISTS; d++) {
-        int dist = stream_dists[d];
+    // Read only (4 bytes per element)
+    int sum = 0;
+    u64 t0 = GetTimerSystemTime();
+    for (int p = 0; p < STREAM_PASSES; p++)
+        sum = stream_sum(stream_in, STREAM_INTS);
+    u64 t1 = GetTimerSystemTime();
+    float mbs_sum = stream_mbs(t1 - t0, 4);
+    printf("--- Stream Sum ---\n");
+    printf("Result: %d\n", sum);
+    printf("Performance: %.2f MB/s\n\n", mbs_sum);
 
-        // Read only (4 bytes per element)
-        int sum = 0;
-        u64 t0 = GetTimerSystemTime();
-        for (int p = 0; p < STREAM_PASSES; p++)
-            sum = stream_sum[d](stream_in, STREAM_INTS);
-        u64 t1 = GetTimerSystemTime();
-        mbs_sum[d] = stream_mbs(t1 - t0, 4);
-        printf("--- Stream Sum, prefetch %d ---\n", dist);
-        printf("Result: %d\n", sum);
-        printf("Performance: %.2f MB/s\n\n", mbs_sum[d]);
+    // Read + write (8 bytes per element)
+    t0 = GetTimerSystemTime();
+    for (int p = 0; p < STREAM_PASSES; p++)
+        stream_scale(stream_in, stream_out, STREAM_INTS);
+    t1 = GetTimerSystemTime();
+    float mbs_scale = stream_mbs(t1 - t0, 8);
+    unsigned int check = 0;
+    for (int i = 0; i < STREAM_INTS; i++)
+        check += stream_out[i];
+    printf("--- Stream Scale ---\n");
+    printf("Result: %u\n", check);
+    printf("Performance: %.2f MB/s\n\n", mbs_scale);
 
-        // Read + write (8 bytes per element)
-        t0 = GetTimerSystemTime();
-        for (int p = 0; p < STREAM_PASSES; p++)
-            stream_scale[d](stream_in, stream_out, STREAM_INTS);
-        t1 = GetTimerSystemTime();
-        mbs_scale[d] = stream_mbs(t1 - t0, 8);
-        unsigned int check = 0;
-        for (int i = 0; i < STREAM_INTS; i++)
-            check += stream_out[i];
-        printf("--- Stream Scale, prefetch %d ---\n", dist);
-        printf("Result: %u\n", check);
-        printf("Performance: %.2f MB/s\n\n", mbs_scale[d]);
-
-        // Read 2 + write 1 (12 bytes per element). y accumulates over all
-        // passes; all values stay exact in single precision.
-        t0 = GetTimerSystemTime();
-        for (int p = 0; p < STREAM_PASSES; p++)
-            stream_saxpy[d](stream_x, stream_y, STREAM_INTS, 0.5f);
-        t1 = GetTimerSystemTime();
-        mbs_saxpy[d] = stream_mbs(t1 - t0, 12);
-        check = 0;
-        for (int i = 0; i < STREAM_INTS; i++)
-            check += (unsigned int)stream_y[i];
-        printf("--- Stream SAXPY, prefetch %d ---\n", dist);
-        printf("Result: %u\n", check);
-        printf("Performance: %.2f MB/s\n\n", mbs_saxpy[d]);
-    }
+    // Read 2 + write 1 (12 bytes per element). y accumulates over all
+    // passes; all values stay exact in single precision.
+    t0 = GetTimerSystemTime();
+    for (int p = 0; p < STREAM_PASSES; p++)
+        stream_saxpy(stream_x, stream_y, STREAM_INTS, 0.5f);
+    t1 = GetTimerSystemTime();
+    float mbs_saxpy = stream_mbs(t1 - t0, 12);
+    check = 0;
+    for (int i = 0; i < STREAM_INTS; i++)
+        check += (unsigned int)stream_y[i];
+    printf("--- Stream SAXPY ---\n");
+    printf("Result: %u\n", check);
+    printf("Performance: %.2f MB/s\n\n", mbs_saxpy);
 
     // === Microarchitecture tests ===
     printf("=== Microarchitecture (CPU cycles) ===\n\n");
@@ -618,12 +609,9 @@ int main() {
 #endif
     printf("  Dot Prod:       %7.2f MFLOPS\n", mflops_vpu5);
     printf("STREAM:\n");
-    for (int d = 0; d < STREAM_NUM_DISTS; d++)
-        print_stream("Sum", stream_dists[d], mbs_sum[d]);
-    for (int d = 0; d < STREAM_NUM_DISTS; d++)
-        print_stream("Scale", stream_dists[d], mbs_scale[d]);
-    for (int d = 0; d < STREAM_NUM_DISTS; d++)
-        print_stream("SAXPY", stream_dists[d], mbs_saxpy[d]);
+    print_stream("Sum", mbs_sum);
+    print_stream("Scale", mbs_scale);
+    print_stream("SAXPY", mbs_saxpy);
     printf("=== Test Complete ===\n");
 
     return 0;
