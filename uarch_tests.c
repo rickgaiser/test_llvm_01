@@ -74,6 +74,16 @@ KERNEL(k_mfc1_use, 64, SETUP, "mfc1 $9, $f8\n" "addu $10, $9, $11\n")
 KERNEL(k_add_swc1, 64, SETUP, "add.s $f1, $f2, $f3\n" "swc1 $f1, 8(%3)\n")
 KERNEL(k_sqrt_s, 64, SETUP, "sqrt.s $f0, $f0\n")
 KERNEL(k_cvt, 64, SETUP, "cvt.w.s $f1, $f1\n" "cvt.s.w $f1, $f1\n")
+// A compare read as a 0/1 value: through FCR31 (C is bit 23), or with a branch
+// over a li as now (not taken with c.eq.s, taken with c.f.s)
+KERNEL(k_c_cfc1, 64, SETUP, "c.eq.s $f8, $f9\n" "cfc1 $9, $31\n")
+KERNEL(k_c_cfc1_srl, 64, SETUP,
+       "c.eq.s $f8, $f9\n" "cfc1 $9, $31\n" "srl $10, $9, 23\n")
+KERNEL(k_cfc1_use, 64, SETUP, "cfc1 $9, $31\n" "addu $10, $9, $11\n")
+KERNEL(k_c_bc1f_nt, 64, SETUP,
+       "c.eq.s $f8, $f9\n" "bc1f 2f\n" "li $9, 0\n" "li $9, 1\n" "2:\n")
+KERNEL(k_c_bc1f_t, 64, SETUP,
+       "c.f.s $f8, $f9\n" "bc1f 2f\n" "li $9, 0\n" "li $9, 1\n" "2:\n")
 
 // --- Pairing: independent instructions ---
 KERNEL(k_addu_addu, 64, SETUP, "addu $9, $10, $11\n" "addu $12, $10, $11\n")
@@ -214,6 +224,15 @@ KERNEL(k_pmultw, 64, MMI_SETUP, PMULTW(9, 9, 10))
 KERNEL(k_pmulth, 64, MMI_SETUP, PMULTH(9, 9, 10))
 KERNEL(k_pmultw_pmflo, 64, MMI_SETUP, PMULTW(0, 9, 10) PMFLO(9))
 KERNEL(k_mult3, 64, MMI_SETUP, MULT3(9, 9, 10))
+// The 64-bit product of mult: in one pmfhl.lw, or as now with mflo, mfhi
+// and shifts
+#define PMFHL_LW(d) R3(0x70000030, d, 0, 0)
+KERNEL(k_mult_pmfhl, 64, MMI_SETUP, "mult $9, $10\n" PMFHL_LW(9))
+KERNEL(k_pmfhl_use, 64, MMI_SETUP, PMFHL_LW(9) "addu $10, $9, $11\n")
+KERNEL(k_pmfhl_addu, 64, MMI_SETUP, PMFHL_LW(9) "addu $10, $11, $12\n")
+KERNEL(k_mult_mfhilo64, 64, MMI_SETUP,
+       "mult $9, $10\n" "mflo $9\n" "mfhi $12\n" "dsll $9, $9, 32\n"
+       "dsll $12, $12, 32\n" "dsrl $9, $9, 32\n" "or $9, $9, $12\n")
 KERNEL(k_mult1_3, 64, MMI_SETUP, MULT1(9, 9, 10))
 // p[0] = p: lq reads its own address
 KERNEL(k_lq, 64, MMI_SETUP "move $9, %3\n", LQ(9, 0, 9))
@@ -931,6 +950,45 @@ static u32 hazard_mfc1(int reps) {
     return sum;
 }
 
+// As hazard_fcc, with the condition read by cfc1 right after c.eq.s
+static u32 hazard_cfc1(int reps) {
+    u32 sum;
+    __asm__ __volatile__(
+        ".set push\n.set noreorder\n.set noat\n"
+        "li $8, 0x3f800000\n" "mtc1 $8, $f8\n"
+        "li $9, 0x40000000\n"
+        "move %0, $0\n"
+        "1:\n"
+        "andi $10, %1, 1\n"
+        "movn $11, $8, $10\n" "movz $11, $9, $10\n"
+        "mtc1 $11, $f9\n"
+        "nop\n" "nop\n" "nop\n" "nop\n"
+        "c.eq.s $f8, $f9\n"
+        "cfc1 $10, $31\n"
+        "srl $10, $10, 23\n"
+        "andi $10, $10, 1\n"
+        "mult $10, $10, %1\n"
+        "addu %0, %0, $10\n"
+        "addiu %1, %1, -1\n"
+        "bnez %1, 1b\n"
+        "nop\n"
+        ".set pop\n"
+        : "=&r"(sum), "+r"(reps)
+        :
+        : "$8", "$9", "$10", "$11", "$f8", "$f9", "hi", "lo", "memory");
+    return sum;
+}
+
+// The 64-bit product of mult by pmfhl.lw
+static u64 check_pmfhl(s32 a, s32 b) {
+    u64 r;
+    __asm__ __volatile__("mult %1, %2\n" PMFHL_LW(9) "move %0, $9\n"
+                         : "=r"(r)
+                         : "r"(a), "r"(b)
+                         : "$9", "hi", "lo");
+    return r;
+}
+
 // mtc1 the repetition count, mov.s it right after; sums it through mfc1
 static u32 hazard_mtc1(int reps) {
     u32 sum;
@@ -965,6 +1023,10 @@ void uarch_run_all(u32 *big, int big_words) {
            (unsigned)hazard_mfc1(1000));
     printf("Result: mtc1,mov.s sum %u (expect 500500)\n",
            (unsigned)hazard_mtc1(1000));
+    printf("Result: mult,pmfhl.lw 0x%016llx (expect 0xfe4eceeb0400ac7b)\n",
+           (unsigned long long)check_pmfhl(-123456789, 987654321));
+    printf("Result: c.eq.s,cfc1 sum %u (expect 250000)\n",
+           (unsigned)hazard_cfc1(1000));
     static u32 buf[16] __attribute__((aligned(64)));
     buf[0] = (u32)&buf[0];
     buf[1] = 0;
@@ -984,6 +1046,13 @@ void uarch_run_all(u32 *big, int big_words) {
         {"mfc1+addu+lwc1", k_lwc1, 64, "3instr", "manual: 2+1+2"},
         {"sqrt.s", k_sqrt_s, 64, "instr", "manual: 8"},
         {"cvt.w.s+cvt.s.w", k_cvt, 64, "2instr", "manual: 4+4"},
+    };
+    static const uarch_test setcc[] = {
+        {"c.eq.s,cfc1", k_c_cfc1, 64, "rep", "?"},
+        {"c.eq.s,cfc1,srl", k_c_cfc1_srl, 64, "rep", "?"},
+        {"cfc1->addu", k_cfc1_use, 64, "rep", "= latency"},
+        {"c.eq.s,bc1f,li (nt)", k_c_bc1f_nt, 64, "rep", "?"},
+        {"c.f.s,bc1f,li (t)", k_c_bc1f_t, 64, "rep", "?"},
     };
     static const uarch_test use[] = {
         {"lw->addu", k_lw_use, 64, "rep", "= latency"},
@@ -1018,6 +1087,8 @@ void uarch_run_all(u32 *big, int big_words) {
         print_line(lat[i].name, run(lat[i].fn, buf, LAT_ITERS, lat[i].reps),
                    lat[i].unit, lat[i].expect);
 
+    run_table("FP compare to 0/1", setcc, sizeof(setcc) / sizeof(setcc[0]), buf);
+
     printf("--- Latency to consumer (producer + consumer per rep) ---\n");
     for (unsigned i = 0; i < sizeof(use) / sizeof(use[0]); i++)
         print_line(use[i].name, run(use[i].fn, buf, LAT_ITERS, use[i].reps),
@@ -1046,6 +1117,8 @@ void uarch_run_all(u32 *big, int big_words) {
         {"pmulth rd", k_pmulth, 64, "instr", "?"},
         {"pmultw+pmflo", k_pmultw_pmflo, 64, "2instr", "?"},
         {"mult rd (3-op)", k_mult3, 64, "instr", "?"},
+        {"mult+pmfhl.lw", k_mult_pmfhl, 64, "2instr", "?"},
+        {"mult+mflo,mfhi,4 ops", k_mult_mfhilo64, 64, "7instr", "?"},
         {"mult1 rd (3-op)", k_mult1_3, 64, "instr", "?"},
         {"lq (hit)", k_lq, 64, "instr", "?"},
         {"psubw", k_psubw, 64, "instr", "?"},
@@ -1078,6 +1151,8 @@ void uarch_run_all(u32 *big, int big_words) {
         {"pcpyud->addu", k_pcpyud_addu, 64, "rep", "= latency"},
         {"pmultw->paddw", k_pmultw_paddw, 64, "rep", "= latency"},
         {"mult rd->addu", k_mult3_addu, 64, "rep", "= latency"},
+        {"pmfhl.lw->addu", k_pmfhl_use, 64, "rep", "= latency"},
+        {"pmfhl.lw|addu", k_pmfhl_addu, 64, "pair", "1 = paired"},
     };
     static const uarch_test mmi_mem[] = {
         {"sw->lw", k_sw_lw, 64, "rep", "store + load"},
