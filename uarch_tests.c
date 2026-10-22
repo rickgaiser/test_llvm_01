@@ -1447,24 +1447,26 @@ void uarch_run_all(u32 *big, int big_words) {
     printf("Result: c.eq.s,cfc1 sum %u (expect 250000)\n",
            (unsigned)hazard_cfc1(1000));
     // One printf per line: the console only shows the first line of one.
-    printf("Result: vdiv,vaddq 0x%08x (0x40a00000 = waits, 0x40400000 = old Q)\n",
+    // The Q reads vary with the code layout, so they are not compared with
+    // gcc ("Check:" instead of "Result:").
+    printf("Check: vdiv,vaddq 0x%08x (0x40a00000 = waits, 0x40400000 = old Q)\n",
            (unsigned)check_vdiv_q0());
-    printf("Result: vdiv,1 vnop,vaddq 0x%08x\n", (unsigned)check_vdiv_q1());
-    printf("Result: vdiv,2 vnop,vaddq 0x%08x\n", (unsigned)check_vdiv_q2());
-    printf("Result: vdiv,4 vnop,vaddq 0x%08x\n", (unsigned)check_vdiv_q4());
-    printf("Result: vdiv,6 vnop,vaddq 0x%08x\n", (unsigned)check_vdiv_q6());
-    printf("Result: vdiv,1 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop1());
-    printf("Result: vdiv,2 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop2());
-    printf("Result: vdiv,3 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop3());
-    printf("Result: vdiv,4 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop4());
-    printf("Result: vdiv,5 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop5());
-    printf("Result: vdiv,6 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop6());
-    printf("Result: vdiv,8 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop8());
-    printf("Result: vdiv,1 vadd,vaddq 0x%08x\n",
+    printf("Check: vdiv,1 vnop,vaddq 0x%08x\n", (unsigned)check_vdiv_q1());
+    printf("Check: vdiv,2 vnop,vaddq 0x%08x\n", (unsigned)check_vdiv_q2());
+    printf("Check: vdiv,4 vnop,vaddq 0x%08x\n", (unsigned)check_vdiv_q4());
+    printf("Check: vdiv,6 vnop,vaddq 0x%08x\n", (unsigned)check_vdiv_q6());
+    printf("Check: vdiv,1 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop1());
+    printf("Check: vdiv,2 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop2());
+    printf("Check: vdiv,3 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop3());
+    printf("Check: vdiv,4 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop4());
+    printf("Check: vdiv,5 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop5());
+    printf("Check: vdiv,6 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop6());
+    printf("Check: vdiv,8 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop8());
+    printf("Check: vdiv,1 vadd,vaddq 0x%08x\n",
            (unsigned)check_vdiv_q_vadd1());
-    printf("Result: vdiv,2 vadd,vaddq 0x%08x\n",
+    printf("Check: vdiv,2 vadd,vaddq 0x%08x\n",
            (unsigned)check_vdiv_q_vadd2());
-    printf("Result: vdiv,4 vadd,vaddq 0x%08x\n",
+    printf("Check: vdiv,4 vadd,vaddq 0x%08x\n",
            (unsigned)check_vdiv_q_vadd4());
     static u32 buf[16] __attribute__((aligned(64)));
     buf[0] = (u32)&buf[0];
