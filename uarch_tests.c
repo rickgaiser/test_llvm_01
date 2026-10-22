@@ -750,8 +750,16 @@ KERNEL(k_qmfc2_paddw, 64, VU0_SETUP, QMFC2_10_5 PADDW(12, 13, 14))
 KERNEL(k_vadd_qmfc2_ind, 64, VU0_SETUP, VADD_3 QMFC2_10_5)
 KERNEL(k_vadd_qmtc2_ind, 64, VU0_SETUP, VADD_3 QMTC2_9_7)
 KERNEL(k_vftoi0_vftoi0, 64, VU0_SETUP, VFTOI0_3 VFTOI0_4)
+// Does a transfer to VU0 stall the next, independent VU0 instruction?
+KERNEL(k_lqc2_vadd_ind, 64, VU0_SETUP, LQC2_7 VADD_3)
+KERNEL(k_qmtc2_vadd_ind, 64, VU0_SETUP, QMTC2_9_7 VADD_3)
+KERNEL(k_lqc2_vmula_ind, 64, VU0_SETUP, LQC2_7 VMULA_1)
+KERNEL(k_lqc2_vadd_vadd, 64, VU0_SETUP, LQC2_7 VADD_3 VADD_4)
+KERNEL(k_lqc2_addu_vadd, 64, VU0_SETUP,
+       LQC2_7 "addu $12, $13, $14\n" VADD_3)
 // Producer and consumer, independent between repetitions: = latency
 KERNEL(k_qmfc2_use, 64, VU0_SETUP, QMFC2_10_5 "addu $11, $10, $12\n")
+KERNEL(k_qmfc2_sq, 64, VU0_SETUP, QMFC2_10_5 "sq $10, 32($24)\n")
 KERNEL(k_qmfc2_mtc1_use, 64, VU0_SETUP,
        QMFC2_10_5 "mtc1 $10, $f4\n" "add.s $f5, $f4, $f8\n")
 KERNEL(k_qmfc2_pcpyud_mtc1, 64, VU0_SETUP,
@@ -1194,6 +1202,75 @@ KERNEL_RAW_ODD(k_sumc_unroll_odd, SUMC_UNROLL_SETUP, SUMC_UNROLL)
 KERNEL_RAW(k_sumc_unroll_nopfill, SUMC_UNROLL_SETUP, SUMC_UNROLL_NOPFILL)
 KERNEL_RAW(k_sumc_unroll_addiu_end, SUMC_UNROLL_SETUP, SUMC_UNROLL_ADDIU_END)
 KERNEL_RAW_ODD(k_sumc_nounroll_odd, SUMC_NOUNROLL_SETUP, SUMC_NOUNROLL)
+
+// The VPU Mat x Vec loop (vpu_matrix_vector_multiply, 4 vectors per
+// iteration) before and after the VU0 Q/transfer scheduling model change.
+// $4 = in + 32, $2 = out = in + 4096, $3 = 4 * n + 4.
+#define MXV_LOOP_OLD \
+    W(0x4be821bc) /* vmulax.xyzw $acc, $vf4, $vf8 */ \
+    "addiu $3, $3, -4\n" \
+    W(0x4be818bd) /* vmadday.xyzw $acc, $vf3, $vf8 */ \
+    "slti $1, $3, 5\n" \
+    W(0x4be810be) /* vmaddaz.xyzw $acc, $vf2, $vf8 */ \
+    W(0x4be80a0b) /* vmaddw.xyzw $vf8, $vf1, $vf8 */ \
+    W(0x4be621bc) /* vmulax.xyzw $acc, $vf4, $vf6 */ \
+    W(0xd88affe0) /* lqc2 $vf10, -32($4) */ \
+    W(0x4be618bd) /* vmadday.xyzw $acc, $vf3, $vf6 */ \
+    W(0x4be610be) /* vmaddaz.xyzw $acc, $vf2, $vf6 */ \
+    W(0x4be60acb) /* vmaddw.xyzw $vf11, $vf1, $vf6 */ \
+    W(0x4bea21bc) /* vmulax.xyzw $acc, $vf4, $vf10 */ \
+    W(0xd889fff0) /* lqc2 $vf9, -16($4) */ \
+    W(0x4bea18bd) /* vmadday.xyzw $acc, $vf3, $vf10 */ \
+    W(0x4bea10be) /* vmaddaz.xyzw $acc, $vf2, $vf10 */ \
+    W(0xf8450000) /* sqc2 $vf5, 0($2) */ \
+    W(0x4bea094b) /* vmaddw.xyzw $vf5, $vf1, $vf10 */ \
+    W(0x4be921bc) /* vmulax.xyzw $acc, $vf4, $vf9 */ \
+    W(0x4be918bd) /* vmadday.xyzw $acc, $vf3, $vf9 */ \
+    W(0x4be910be) /* vmaddaz.xyzw $acc, $vf2, $vf9 */ \
+    W(0xf8470010) /* sqc2 $vf7, 16($2) */ \
+    W(0x4be909cb) /* vmaddw.xyzw $vf7, $vf1, $vf9 */ \
+    W(0xf8480020) /* sqc2 $vf8, 32($2) */ \
+    W(0xd8880000) /* lqc2 $vf8, 0($4) */ \
+    W(0xd8860010) /* lqc2 $vf6, 16($4) */ \
+    "addiu $4, $4, 64\n" \
+    W(0xf84b0030) /* sqc2 $vf11, 48($2) */ \
+    "beqz $1, 2b\n" \
+    "addiu $2, $2, 64\n"
+#define MXV_LOOP_NEW \
+    W(0x4be821bc) /* vmulax.xyzw $acc, $vf4, $vf8 */ \
+    "addiu $3, $3, -4\n" \
+    W(0x4be818bd) /* vmadday.xyzw $acc, $vf3, $vf8 */ \
+    "slti $1, $3, 5\n" \
+    W(0x4be810be) /* vmaddaz.xyzw $acc, $vf2, $vf8 */ \
+    W(0xf8470000) /* sqc2 $vf7, 0($2) */ \
+    W(0x4be809cb) /* vmaddw.xyzw $vf7, $vf1, $vf8 */ \
+    W(0x4be521bc) /* vmulax.xyzw $acc, $vf4, $vf5 */ \
+    W(0x4be518bd) /* vmadday.xyzw $acc, $vf3, $vf5 */ \
+    W(0xd888ffe0) /* lqc2 $vf8, -32($4) */ \
+    W(0x4be510be) /* vmaddaz.xyzw $acc, $vf2, $vf5 */ \
+    W(0x4be5094b) /* vmaddw.xyzw $vf5, $vf1, $vf5 */ \
+    W(0x4be821bc) /* vmulax.xyzw $acc, $vf4, $vf8 */ \
+    W(0xf8460010) /* sqc2 $vf6, 16($2) */ \
+    W(0xd886fff0) /* lqc2 $vf6, -16($4) */ \
+    W(0x4be818bd) /* vmadday.xyzw $acc, $vf3, $vf8 */ \
+    W(0x4be810be) /* vmaddaz.xyzw $acc, $vf2, $vf8 */ \
+    W(0xf8470020) /* sqc2 $vf7, 32($2) */ \
+    W(0x4be809cb) /* vmaddw.xyzw $vf7, $vf1, $vf8 */ \
+    W(0x4be621bc) /* vmulax.xyzw $acc, $vf4, $vf6 */ \
+    W(0x4be618bd) /* vmadday.xyzw $acc, $vf3, $vf6 */ \
+    W(0x4be610be) /* vmaddaz.xyzw $acc, $vf2, $vf6 */ \
+    W(0x4be6098b) /* vmaddw.xyzw $vf6, $vf1, $vf6 */ \
+    W(0xf8450030) /* sqc2 $vf5, 48($2) */ \
+    "addiu $2, $2, 64\n" \
+    W(0xd8880000) /* lqc2 $vf8, 0($4) */ \
+    W(0xd8850010) /* lqc2 $vf5, 16($4) */ \
+    "beqz $1, 2b\n" \
+    "addiu $4, $4, 64\n"
+#define MXV_SETUP                                                      \
+    "addiu $4, %2, 32\n" "addiu $2, %2, 4096\n" "sll $3, %3, 2\n"       \
+    "addiu $3, $3, 4\n"
+KERNEL_RAW(k_mxv_old, MXV_SETUP, MXV_LOOP_OLD)
+KERNEL_RAW(k_mxv_new, MXV_SETUP, MXV_LOOP_NEW)
 
 // --- Issue pairing of aligned 8-byte blocks ---
 // T3: a load and its use share a block, then a block of 2 independent ALU ops.
@@ -1832,7 +1909,15 @@ void uarch_run_all(u32 *big, int big_words) {
         {"vadd|qmfc2 (indep)", k_vadd_qmfc2_ind, 64, "pair", "1 = paired"},
         {"vadd|qmtc2 (indep)", k_vadd_qmtc2_ind, 64, "pair", "1 = paired"},
         {"vftoi0|vftoi0", k_vftoi0_vftoi0, 64, "pair", "1 = paired"},
+        {"lqc2,vadd (indep)", k_lqc2_vadd_ind, 64, "pair", "1 = paired"},
+        {"qmtc2,vadd (indep)", k_qmtc2_vadd_ind, 64, "pair", "1 = paired"},
+        {"lqc2,vmula (indep)", k_lqc2_vmula_ind, 64, "pair", "1 = paired"},
+        {"lqc2,vadd,vadd (indep)", k_lqc2_vadd_vadd, 64, "group",
+         "3 = no stall"},
+        {"lqc2,addu,vadd (indep)", k_lqc2_addu_vadd, 64, "group",
+         "2 = no stall"},
         {"qmfc2->addu", k_qmfc2_use, 64, "rep", "= latency"},
+        {"qmfc2->sq", k_qmfc2_sq, 64, "rep", "= latency"},
         {"qmfc2->mtc1->add.s", k_qmfc2_mtc1_use, 64, "rep", "= latency"},
         {"qmfc2,pcpyud,mtc1", k_qmfc2_pcpyud_mtc1, 64, "rep", "= latency"},
         {"pextlw->qmtc2->vadd", k_pextlw_qmtc2_vadd, 64, "rep", "= latency"},
@@ -1889,8 +1974,21 @@ void uarch_run_all(u32 *big, int big_words) {
     u32 status;
     __asm__ __volatile__("mfc0 %0, $12" : "=r"(status));
     if (status & (1u << 30))  // Status.CU2
+    {
         run_table("VU0 macro mode", vu0, sizeof(vu0) / sizeof(vu0[0]), buf);
-    else
+        // 32 iterations of 4 vectors: 2 KB in, 2 KB out 4 KB after it
+        static u32 mxv_buf[2048] __attribute__((aligned(64)));
+        u32 *spram = (u32 *)0x70000000;
+        printf("--- VPU Mat x Vec loop (cyc/iter, 4 vectors) ---\n");
+        print_line("old order, cached", run(k_mxv_old, mxv_buf, 32, 1), "iter",
+                   "1138 MFLOPS");
+        print_line("new order, cached", run(k_mxv_new, mxv_buf, 32, 1), "iter",
+                   "1068 MFLOPS");
+        print_line("old order, SPRAM", run(k_mxv_old, spram, 32, 1), "iter",
+                   "1138 MFLOPS");
+        print_line("new order, SPRAM", run(k_mxv_new, spram, 32, 1), "iter",
+                   "1068 MFLOPS");
+    } else
         printf("--- VU0 macro mode: skipped, COP2 not usable ---\n");
 
     // Memory: one line per 16 words, much larger than the 8KB data cache
