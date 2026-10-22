@@ -54,6 +54,9 @@ static v4sf vpu_vec_a[VPU_NUM_VECTORS] __attribute__((aligned(16)));
 static v4sf vpu_vec_b[VPU_NUM_VECTORS] __attribute__((aligned(16)));
 static v4sf vpu_vec_out[VPU_NUM_VECTORS] __attribute__((aligned(16)));
 static float vpu_dot_out[VPU_NUM_VECTORS] __attribute__((aligned(16)));
+static v4sf vpu_hm_in[VPU_NUM_VECTORS] __attribute__((aligned(16)));
+static float vpu_hmax_out[VPU_NUM_VECTORS] __attribute__((aligned(16)));
+static float vpu_hmin_out[VPU_NUM_VECTORS] __attribute__((aligned(16)));
 
 // Larger arrays for main memory (cached) testing
 #define MAIN_MEM_VECS 4080  // 4080 vectors = 65280 bytes, divisible by 12
@@ -114,6 +117,16 @@ int main() {
         float base = (float)v * 0.1f;
         vpu_vec_a[v] = (v4sf){base, base + 0.1f, base + 0.2f, base + 0.3f};
         vpu_vec_b[v] = (v4sf){1.0f, 2.0f, 3.0f, 4.0f};
+    }
+    // Horizontal max/min input: the largest and smallest lane vary
+    unsigned int hm_seed = 12345;
+    for (int v = 0; v < VPU_NUM_VECTORS; v++) {
+        float lane[4];
+        for (int i = 0; i < 4; i++) {
+            hm_seed = hm_seed * 1103515245u + 12345u;
+            lane[i] = (float)((int)(hm_seed >> 16 & 0x7fff) - 16384) * 0.25f;
+        }
+        vpu_hm_in[v] = (v4sf){lane[0], lane[1], lane[2], lane[3]};
     }
 
     // Initialize main memory test data
@@ -417,6 +430,30 @@ int main() {
     printf("Time: %llu ticks (%.2f us)\n", ticks12, usec12);
     printf("Performance: %.2f MFLOPS (%.0f dots/sec)\n\n", mflops_vpu5, vpu_dot_per_sec);
 
+    // Test 12b: VPU Horizontal Max/Min of a + b (v4sf)
+    printf("--- Test 12b: VPU Horizontal Max/Min v4sf (%d vecs x %d batches) ---\n", VPU_NUM_VECTORS, vpu_batches);
+
+    u64 start12b = GetTimerSystemTime();
+    for (int iter = 0; iter < vpu_batches; iter++) {
+        vpu_hmax_hmin(vpu_hm_in, vpu_vec_b, vpu_hmax_out, vpu_hmin_out, VPU_NUM_VECTORS);
+    }
+    u64 end12b = GetTimerSystemTime();
+
+    u64 ticks12b = end12b - start12b;
+    float usec12b = (float)ticks12b / 150.0f;
+    float mvecs_hm = (float)VPU_NUM_VECTORS * vpu_batches / usec12b;
+    unsigned int hmax_bits = 0, hmin_bits = 0;
+    for (int v = 0; v < VPU_NUM_VECTORS; v++) {
+        union { float f; unsigned int u; } mx = {vpu_hmax_out[v]}, mn = {vpu_hmin_out[v]};
+        hmax_bits = (hmax_bits << 1 | hmax_bits >> 31) ^ mx.u;
+        hmin_bits = (hmin_bits << 1 | hmin_bits >> 31) ^ mn.u;
+    }
+
+    printf("First max/min: %.2f %.2f\n", vpu_hmax_out[0], vpu_hmin_out[0]);
+    printf("Result: hmax 0x%08x hmin 0x%08x\n", hmax_bits, hmin_bits);
+    printf("Time: %llu ticks (%.2f us)\n", ticks12b, usec12b);
+    printf("Performance: %.2f Mvec/s\n\n", mvecs_hm);
+
 #ifdef __mips_vu0
     // Test 13: VPU Matrix-Vector Multiply ASM variants - using Scratchpad RAM
     // Use 252 vectors (divisible by 1, 2, 3, 4), 248 for 8v (divisible by 8)
@@ -636,6 +673,7 @@ int main() {
     printf("  Compute Only:   %7.2f MFLOPS\n", mflops_vpu7);
 #endif
     printf("  Dot Prod:       %7.2f MFLOPS\n", mflops_vpu5);
+    printf("  HMax/HMin:      %7.2f Mvec/s\n", mvecs_hm);
     printf("STREAM:\n");
     print_stream("Sum", mbs_sum);
     print_stream("Scale", mbs_scale);

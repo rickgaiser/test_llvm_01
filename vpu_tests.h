@@ -41,6 +41,12 @@ void vpu_dot_product(v4sf * restrict a ALIGNED16,
                     float * restrict result ALIGNED16,
                     int count);
 
+void vpu_hmax_hmin(v4sf * restrict a ALIGNED16,
+                   v4sf * restrict b ALIGNED16,
+                   float * restrict max_out ALIGNED16,
+                   float * restrict min_out ALIGNED16,
+                   int count);
+
 #ifdef __mips_vu0
 void vpu_matrix_vector_multiply_asm(v4sf mat[4] ALIGNED16,
                                    v4sf * restrict vecs_in ALIGNED16,

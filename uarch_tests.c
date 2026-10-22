@@ -774,6 +774,23 @@ KERNEL(k_vaddy_vaddz, 64, VU0_SETUP, VADDY_3 VADDZ_4)
 KERNEL(k_hsum_bc, 64, VU0_SETUP, VADDY_11 VADDZ_11 VADDW_11)
 KERNEL(k_hsum_acc, 64, VU0_SETUP, VMULAX_21 VMADDAY_21 VMADDAZ_21 VMADDW_21)
 KERNEL(k_vmulax_vmaddw, 64, VU0_SETUP, VMULAX_21 VMADDW_21)
+#define VMAXY_1 W(0x4be20851)       // vmaxy.xyzw $vf1, $vf1, $vf2
+#define VMINIY_1 W(0x4be20855)      // vminiy.xyzw $vf1, $vf1, $vf2
+#define VMAXY_3 W(0x4be628d1)       // vmaxy.xyzw $vf3, $vf5, $vf6
+#define VMINIZ_4 W(0x4be62916)      // vminiz.xyzw $vf4, $vf5, $vf6
+// x+y+z+w (or max) in 2 levels: vf2 = vf1 + vf1.y, vf3 = vf1 + vf1.w,
+// vf1 = vf2 + vf3.z
+#define VADDY_2_11 W(0x4be10881)    // vaddy.xyzw $vf2, $vf1, $vf1
+#define VADDW_3_11 W(0x4be108c3)    // vaddw.xyzw $vf3, $vf1, $vf1
+#define VADDZ_1_23 W(0x4be31042)    // vaddz.xyzw $vf1, $vf2, $vf3
+#define VMAXY_2_11 W(0x4be10891)    // vmaxy.xyzw $vf2, $vf1, $vf1
+#define VMAXW_3_11 W(0x4be108d3)    // vmaxw.xyzw $vf3, $vf1, $vf1
+#define VMAXZ_1_23 W(0x4be31052)    // vmaxz.xyzw $vf1, $vf2, $vf3
+KERNEL(k_vmaxy, 64, VU0_SETUP, VMAXY_1)
+KERNEL(k_vminiy, 64, VU0_SETUP, VMINIY_1)
+KERNEL(k_vmaxy_vminiz, 64, VU0_SETUP, VMAXY_3 VMINIZ_4)
+KERNEL(k_hsum_tree, 64, VU0_SETUP, VADDY_2_11 VADDW_3_11 VADDZ_1_23)
+KERNEL(k_hmax_tree, 64, VU0_SETUP, VMAXY_2_11 VMAXW_3_11 VMAXZ_1_23)
 KERNEL(k_sqc2_lw_use, 64, VU0_SETUP,
        SQC2_3 "lw $10, 32($24)\n" "addu $11, $10, $12\n")
 #define LQC2_1_32 W(0xdb010020)     // lqc2 $vf1, 32($24)
@@ -1743,6 +1760,11 @@ void uarch_run_all(u32 *big, int big_words) {
         {"hsum vmulax,vmadda y/z,vmaddw", k_hsum_acc, 64, "rep",
          "= latency"},
         {"vmulax+vmaddw", k_vmulax_vmaddw, 64, "2instr", "?"},
+        {"vmaxy", k_vmaxy, 64, "instr", "?"},
+        {"vminiy", k_vminiy, 64, "instr", "?"},
+        {"vmaxy|vminiz", k_vmaxy_vminiz, 64, "pair", "1 = paired"},
+        {"hsum tree vaddy,vaddw,vaddz", k_hsum_tree, 64, "rep", "= latency"},
+        {"hmax tree vmaxy,vmaxw,vmaxz", k_hmax_tree, 64, "rep", "= latency"},
         {"sqc2->lw->addu", k_sqc2_lw_use, 64, "rep", "= latency"},
         {"sw->lqc2->vadd", k_sw_lqc2_vadd, 64, "rep", "= latency"},
         {"4 sw->lqc2->vadd", k_sw4_lqc2_vadd, 64, "rep", "= latency"},

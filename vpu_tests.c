@@ -1,3 +1,4 @@
+#include <math.h>
 #include "vpu_tests.h"
 
 // UCAB (Uncached Accelerated) memory access - bypasses cache, uses write buffer
@@ -115,6 +116,19 @@ void vpu_dot_product(v4sf * restrict a ALIGNED16,
         v4sf prod = a[i] * b[i];
         // Horizontal sum of 4 components
         result[i] = prod[0] + prod[1] + prod[2] + prod[3];
+    }
+}
+
+void vpu_hmax_hmin(v4sf * restrict a ALIGNED16,
+                   v4sf * restrict b ALIGNED16,
+                   float * restrict max_out ALIGNED16,
+                   float * restrict min_out ALIGNED16,
+                   int count) {
+    for (int i = 0; i < count; i++) {
+        v4sf v = a[i] + b[i];
+        // Horizontal max and min of 4 components
+        max_out[i] = fmaxf(fmaxf(v[0], v[1]), fmaxf(v[2], v[3]));
+        min_out[i] = fminf(fminf(v[0], v[1]), fminf(v[2], v[3]));
     }
 }
 
