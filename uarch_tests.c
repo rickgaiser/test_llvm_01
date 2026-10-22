@@ -851,6 +851,23 @@ KERNEL(k_vdiv_vnop2_vaddq, 16, VU0_ONES_SETUP, VDIV7X VNOP VNOP VADDQX)
 KERNEL(k_vdiv_vnop2, 16, VU0_ONES_SETUP, VDIV7X VNOP VNOP)
 KERNEL(k_vnop, 64, VU0_ONES_SETUP, VNOP)
 
+// Loads after stores, run on the data cache and on SPRAM: the VPU Mat x Vec
+// loop is 2 cycles slower on SPRAM, not in the cache, with sqc2 just before
+// two lqc2. The stores go to 32($24) and 48($24), the loads to 0 and 16.
+KERNEL(k_sqc2_lqc2, 64, VU0_SETUP, SQC2_3 LQC2_7)
+KERNEL(k_sqc2_lqc2_lqc2, 64, VU0_SETUP, SQC2_3 LQC2_7 LQC2_8)
+KERNEL(k_sqc2_sqc2_lqc2_lqc2, 64, VU0_SETUP, SQC2_3 SQC2_4 LQC2_7 LQC2_8)
+KERNEL(k_sqc2_addu_lqc2, 64, VU0_SETUP,
+       SQC2_3 "addu $12, $13, $14\n" LQC2_7)
+KERNEL(k_sqc2_vnop_lqc2, 64, VU0_SETUP, SQC2_3 VNOP LQC2_7)
+KERNEL(k_sqc2_vnop2_lqc2, 64, VU0_SETUP, SQC2_3 VNOP VNOP LQC2_7)
+KERNEL(k_sqc2_vnop4_lqc2, 64, VU0_SETUP,
+       SQC2_3 VNOP VNOP VNOP VNOP LQC2_7)
+KERNEL(k_lqc2_vnop, 64, VU0_SETUP, LQC2_7 VNOP)
+KERNEL(k_sqc2_vnop, 64, VU0_SETUP, SQC2_3 VNOP)
+KERNEL(k_sw_lw_ind, 64, VU0_SETUP, "sw $12, 32($24)\n" "lw $13, 0($24)\n")
+KERNEL(k_sq_lq_ind, 64, VU0_SETUP, SQ(12, 32, 24) LQ(13, 0, 24))
+
 // STREAM Sum loop bodies: each load is followed by the add of the load LAG
 // loads before it (the compiler emits LAG 2 without and LAG 1 with partial
 // unrolling), for 1 or 2 cache lines per iteration.
@@ -1271,6 +1288,90 @@ KERNEL_RAW_ODD(k_sumc_nounroll_odd, SUMC_NOUNROLL_SETUP, SUMC_NOUNROLL)
     "addiu $3, $3, 4\n"
 KERNEL_RAW(k_mxv_old, MXV_SETUP, MXV_LOOP_OLD)
 KERNEL_RAW(k_mxv_new, MXV_SETUP, MXV_LOOP_NEW)
+// As KERNEL_RAW, but the loop starts at an I-cache line (64 bytes), so the
+// placement of the kernel does not change its fetch.
+#define KERNEL_RAW64(name, setup, loop)                                    \
+    static u32 name(u32 *p, int n) {                                      \
+        u32 t0, t1;                                                        \
+        __asm__ __volatile__(                                              \
+            ".set push\n.set noreorder\n.set noat\n"                       \
+            setup                                                          \
+            "mfc0 %0, $9\n"                                                \
+            ".align 6\n"                                                   \
+            "2:\n" loop                                                    \
+            "mfc0 %1, $9\n"                                                \
+            ".set pop\n"                                                   \
+            : "=&r"(t0), "=&r"(t1)                                         \
+            : "r"(p), "r"(n)                                               \
+            : "memory", "$1", "$2", "$3", "$4", "$5", "$6", "$7", "$8",    \
+              "$9", "$10", "$11");                                         \
+        return t1 - t0;                                                    \
+    }
+KERNEL_RAW64(k_mxv_old_a64, MXV_SETUP, MXV_LOOP_OLD)
+KERNEL_RAW64(k_mxv_new_a64, MXV_SETUP, MXV_LOOP_NEW)
+
+// Walking loads and stores: $4 walks the input and $2 the output (in +
+// 4096) by 64 bytes per iteration, $6 and $5 stay at their start.
+#define SQC2_W2_0 W(0xf8430000) // sqc2 $vf3, 0($2)
+#define SQC2_W2_1 W(0xf8440010) // sqc2 $vf4, 16($2)
+#define SQC2_W2_2 W(0xf8450020) // sqc2 $vf5, 32($2)
+#define SQC2_W2_3 W(0xf8460030) // sqc2 $vf6, 48($2)
+#define SQC2_W5_0 W(0xf8a30000) // sqc2 $vf3, 0($5)
+#define SQC2_W5_1 W(0xf8a40010) // sqc2 $vf4, 16($5)
+#define SQC2_W5_2 W(0xf8a50020) // sqc2 $vf5, 32($5)
+#define SQC2_W5_3 W(0xf8a60030) // sqc2 $vf6, 48($5)
+#define LQC2_W4_0 W(0xd8870000) // lqc2 $vf7, 0($4)
+#define LQC2_W4_1 W(0xd8880010) // lqc2 $vf8, 16($4)
+#define LQC2_W4_2 W(0xd8890020) // lqc2 $vf9, 32($4)
+#define LQC2_W4_3 W(0xd88a0030) // lqc2 $vf10, 48($4)
+#define LQC2_W6_0 W(0xd8c70000) // lqc2 $vf7, 0($6)
+#define LQC2_W6_1 W(0xd8c80010) // lqc2 $vf8, 16($6)
+#define LQC2_W6_2 W(0xd8c90020) // lqc2 $vf9, 32($6)
+#define LQC2_W6_3 W(0xd8ca0030) // lqc2 $vf10, 48($6)
+#define VNOP4 VNOP VNOP VNOP VNOP
+#define VNOP16 VNOP4 VNOP4 VNOP4 VNOP4
+#define WALK_SETUP                                                     \
+    "move $4, %2\n" "addiu $2, %2, 4096\n" "move $5, $2\n"              \
+    "move $6, $4\n" "move $3, %3\n"
+#define WALK_END                                                       \
+    "addiu $3, $3, -1\n" "addiu $4, $4, 64\n" "bnez $3, 2b\n"           \
+    "addiu $2, $2, 64\n"
+#define S_W SQC2_W2_0 SQC2_W2_1 SQC2_W2_2 SQC2_W2_3
+#define S_C SQC2_W5_0 SQC2_W5_1 SQC2_W5_2 SQC2_W5_3
+#define L_W LQC2_W4_0 LQC2_W4_1 LQC2_W4_2 LQC2_W4_3
+#define L_C LQC2_W6_0 LQC2_W6_1 LQC2_W6_2 LQC2_W6_3
+KERNEL_RAW64(k_walk_vnop, WALK_SETUP, VNOP16 WALK_END)
+KERNEL_RAW64(k_walk_s, WALK_SETUP, S_W VNOP16 WALK_END)
+KERNEL_RAW64(k_walk_s_c, WALK_SETUP, S_C VNOP16 WALK_END)
+KERNEL_RAW64(k_walk_l, WALK_SETUP, L_W VNOP16 WALK_END)
+KERNEL_RAW64(k_walk_l_c, WALK_SETUP, L_C VNOP16 WALK_END)
+KERNEL_RAW64(k_walk_sl, WALK_SETUP, S_W L_W VNOP16 WALK_END)
+KERNEL_RAW64(k_walk_ls, WALK_SETUP, L_W S_W VNOP16 WALK_END)
+KERNEL_RAW64(k_walk_sl_c, WALK_SETUP, S_C L_C VNOP16 WALK_END)
+KERNEL_RAW64(k_walk_slsl, WALK_SETUP,
+             SQC2_W2_0 LQC2_W4_0 SQC2_W2_1 LQC2_W4_1 SQC2_W2_2 LQC2_W4_2
+             SQC2_W2_3 LQC2_W4_3 VNOP16 WALK_END)
+KERNEL_RAW64(k_walk_s_vnop_l, WALK_SETUP,
+             SQC2_W2_0 VNOP4 LQC2_W4_0 SQC2_W2_1 VNOP4 LQC2_W4_1
+             SQC2_W2_2 VNOP4 LQC2_W4_2 SQC2_W2_3 VNOP4 LQC2_W4_3 WALK_END)
+
+// The same with the output at other distances from the input.
+#define MXV_SETUP_OUT(off)                                             \
+    "addiu $4, %2, 32\n" "addiu $2, %2, " #off "\n" "sll $3, %3, 2\n"  \
+    "addiu $3, $3, 4\n"
+KERNEL_RAW(k_mxv_old_2048, MXV_SETUP_OUT(2048), MXV_LOOP_OLD)
+KERNEL_RAW(k_mxv_new_2048, MXV_SETUP_OUT(2048), MXV_LOOP_NEW)
+KERNEL_RAW(k_mxv_old_4112, MXV_SETUP_OUT(4112), MXV_LOOP_OLD)
+KERNEL_RAW(k_mxv_new_4112, MXV_SETUP_OUT(4112), MXV_LOOP_NEW)
+KERNEL_RAW(k_mxv_old_4128, MXV_SETUP_OUT(4128), MXV_LOOP_OLD)
+KERNEL_RAW(k_mxv_new_4128, MXV_SETUP_OUT(4128), MXV_LOOP_NEW)
+KERNEL_RAW(k_mxv_old_4160, MXV_SETUP_OUT(4160), MXV_LOOP_OLD)
+KERNEL_RAW(k_mxv_new_4160, MXV_SETUP_OUT(4160), MXV_LOOP_NEW)
+KERNEL_RAW(k_mxv_old_8192, MXV_SETUP_OUT(8192), MXV_LOOP_OLD)
+KERNEL_RAW(k_mxv_new_8192, MXV_SETUP_OUT(8192), MXV_LOOP_NEW)
+// In place: the output overwrites the input already read.
+KERNEL_RAW(k_mxv_old_0, MXV_SETUP_OUT(0), MXV_LOOP_OLD)
+KERNEL_RAW(k_mxv_new_0, MXV_SETUP_OUT(0), MXV_LOOP_NEW)
 
 // --- Issue pairing of aligned 8-byte blocks ---
 // T3: a load and its use share a block, then a block of 2 independent ALU ops.
@@ -1976,6 +2077,36 @@ void uarch_run_all(u32 *big, int big_words) {
     if (status & (1u << 30))  // Status.CU2
     {
         run_table("VU0 macro mode", vu0, sizeof(vu0) / sizeof(vu0[0]), buf);
+        static const uarch_test mem[] = {
+            {"lqc2->vadd", k_lqc2_vadd, 64, "rep", "= latency"},
+            {"vadd->sqc2", k_vadd_sqc2, 64, "rep", "= latency"},
+            {"lqc2|lqc2", k_lqc2_lqc2, 64, "pair", "1 = paired"},
+            {"sqc2|sqc2", k_sqc2_sqc2, 64, "pair", "1 = paired"},
+            {"lqc2|sqc2", k_lqc2_sqc2, 64, "pair", "1 = paired"},
+            {"sqc2|lqc2", k_sqc2_lqc2, 64, "pair", "1 = paired"},
+            {"sqc2,lqc2,lqc2", k_sqc2_lqc2_lqc2, 64, "group", "3 = no stall"},
+            {"2 sqc2,2 lqc2", k_sqc2_sqc2_lqc2_lqc2, 64, "group",
+             "4 = no stall"},
+            {"sqc2,addu,lqc2", k_sqc2_addu_lqc2, 64, "group", "2 = no stall"},
+            {"sqc2,vnop,lqc2", k_sqc2_vnop_lqc2, 64, "group", "3 = no stall"},
+            {"sqc2,2 vnop,lqc2", k_sqc2_vnop2_lqc2, 64, "group",
+             "4 = no stall"},
+            {"sqc2,4 vnop,lqc2", k_sqc2_vnop4_lqc2, 64, "group",
+             "6 = no stall"},
+            {"lqc2,vnop", k_lqc2_vnop, 64, "pair", "2 = no stall"},
+            {"sqc2,vnop", k_sqc2_vnop, 64, "pair", "2 = no stall"},
+            {"sw->lqc2->vadd", k_sw_lqc2_vadd, 64, "rep", "= latency"},
+            {"sqc2->lw->addu", k_sqc2_lw_use, 64, "rep", "= latency"},
+            {"sw|lw", k_sw_lw_ind, 64, "pair", "2 = no stall"},
+            {"sq|lq", k_sq_lq_ind, 64, "pair", "2 = no stall"},
+            {"lw->addu", k_lw_use, 64, "rep", "= latency"},
+            {"lq|lq", k_lq_lq, 64, "pair", "2 = no stall"},
+            {"sq|sq", k_sq_sq, 64, "pair", "2 = no stall"},
+        };
+        run_table("Loads and stores, data cache", mem,
+                  sizeof(mem) / sizeof(mem[0]), buf);
+        run_table("Loads and stores, SPRAM", mem, sizeof(mem) / sizeof(mem[0]),
+                  (u32 *)0x70003f00);
         // 32 iterations of 4 vectors: 2 KB in, 2 KB out 4 KB after it
         static u32 mxv_buf[2048] __attribute__((aligned(64)));
         u32 *spram = (u32 *)0x70000000;
@@ -1988,6 +2119,52 @@ void uarch_run_all(u32 *big, int big_words) {
                    "1138 MFLOPS");
         print_line("new order, SPRAM", run(k_mxv_new, spram, 32, 1), "iter",
                    "1068 MFLOPS");
+        static const struct {
+            const char *name;
+            kernel_fn fn;
+        } mxv_out[] = {
+            {"old, SPRAM, out +2048", k_mxv_old_2048},
+            {"new, SPRAM, out +2048", k_mxv_new_2048},
+            {"old, SPRAM, out +4112", k_mxv_old_4112},
+            {"new, SPRAM, out +4112", k_mxv_new_4112},
+            {"old, SPRAM, out +4128", k_mxv_old_4128},
+            {"new, SPRAM, out +4128", k_mxv_new_4128},
+            {"old, SPRAM, out +4160", k_mxv_old_4160},
+            {"new, SPRAM, out +4160", k_mxv_new_4160},
+            {"old, SPRAM, out +8192", k_mxv_old_8192},
+            {"new, SPRAM, out +8192", k_mxv_new_8192},
+            {"old, SPRAM, in place", k_mxv_old_0},
+            {"new, SPRAM, in place", k_mxv_new_0},
+        };
+        for (unsigned i = 0; i < sizeof(mxv_out) / sizeof(mxv_out[0]); i++)
+            print_line(mxv_out[i].name, run(mxv_out[i].fn, spram, 32, 1),
+                       "iter", "out +4096: 29 old, 31 new");
+        static const struct {
+            const char *name;
+            kernel_fn fn;
+            const char *expect;
+        } walk[] = {
+            {"old order, 64-aligned", k_mxv_old_a64, "Mat x Vec loop"},
+            {"new order, 64-aligned", k_mxv_new_a64, "Mat x Vec loop"},
+            {"16 vnop", k_walk_vnop, "base"},
+            {"4 sqc2, 16 vnop", k_walk_s, "walking"},
+            {"4 sqc2 fixed, 16 vnop", k_walk_s_c, "same address"},
+            {"4 lqc2, 16 vnop", k_walk_l, "walking"},
+            {"4 lqc2 fixed, 16 vnop", k_walk_l_c, "same address"},
+            {"4 sqc2,4 lqc2,16 vnop", k_walk_sl, "walking"},
+            {"4 lqc2,4 sqc2,16 vnop", k_walk_ls, "walking"},
+            {"4 sqc2,4 lqc2 fixed", k_walk_sl_c, "same address"},
+            {"(sqc2,lqc2) x4,16 vnop", k_walk_slsl, "walking"},
+            {"(sqc2,4 vnop,lqc2) x4", k_walk_s_vnop_l, "walking"},
+        };
+        for (int m = 0; m < 2; m++) {
+            printf("--- Walking loads and stores, %s (cyc/iter) ---\n",
+                   m ? "SPRAM" : "data cache");
+            for (unsigned i = 0; i < sizeof(walk) / sizeof(walk[0]); i++)
+                print_line(walk[i].name,
+                           run(walk[i].fn, m ? spram : mxv_buf, 32, 1), "iter",
+                           walk[i].expect);
+        }
     } else
         printf("--- VU0 macro mode: skipped, COP2 not usable ---\n");
 
