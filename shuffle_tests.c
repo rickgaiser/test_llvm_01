@@ -1,6 +1,7 @@
 // Integer vector shuffles of the kinds that the R5900 has MMI instructions
 // for: the even and odd elements of two vectors (also of one), the
-// interleaved low and high halves, and the low and high halves. Also splats
+// interleaved low and high halves, the low and high halves, and word
+// permutations of one vector, also of floats. Also splats
 // of a register, extensions to wider elements and 16x16->32 multiplies.
 #include <stdio.h>
 #include "app_tests.h"
@@ -55,6 +56,23 @@ static void __attribute__((noinline)) shuffle_v16b(void) {
     *(v16b *)res[7] = __builtin_shufflevector(a, b, 1, 3, 5, 7, 9, 11, 13, 15, 1, 3, 5, 7, 9, 11, 13, 15);
 }
 
+typedef float v4f __attribute__((vector_size(16)));
+
+// Word permutations of one vector (PEXEW, PEXCW, PROT3W, the halves
+// swapped), and float shuffles, which are MMI shuffles of the bits with VU0
+static void __attribute__((noinline)) shuffle_perm(void) {
+    v4w a = *(v4w *)in_a;
+    *(v4w *)res[0] = __builtin_shufflevector(a, a, 2, 1, 0, 3);
+    *(v4w *)res[1] = __builtin_shufflevector(a, a, 0, 2, 1, 3);
+    *(v4w *)res[2] = __builtin_shufflevector(a, a, 1, 2, 0, 3);
+    *(v4w *)res[3] = __builtin_shufflevector(a, a, 2, 3, 0, 1);
+    v4f fa = *(v4f *)in_a, fb = *(v4f *)in_b;
+    *(v4f *)res[4] = __builtin_shufflevector(fa, fb, 0, 4, 1, 5);
+    *(v4f *)res[5] = __builtin_shufflevector(fa, fb, 1, 3, 5, 7);
+    *(v4f *)res[6] = __builtin_shufflevector(fa, fb, 1, 2, 0, 3);
+    *(v4f *)res[7] = __builtin_shufflevector(fa, fb, 2, 3, 6, 7);
+}
+
 static volatile unsigned scalar = 0x89abcdefu;
 static int wide[64] __attribute__((aligned(64)));
 
@@ -84,6 +102,8 @@ void shuffle_checks(void) {
     printf("Result: halfwords 0x%08x\n", (unsigned)app_hash(res, sizeof(res)));
     shuffle_v16b();
     printf("Result: bytes 0x%08x\n", (unsigned)app_hash(res, sizeof(res)));
+    shuffle_perm();
+    printf("Result: permutations 0x%08x\n", (unsigned)app_hash(res, sizeof(res)));
     widen_checks();
     printf("Result: splats 0x%08x, extend and multiply 0x%08x\n\n",
            (unsigned)app_hash(res, 48), (unsigned)app_hash(wide, sizeof(wide)));
