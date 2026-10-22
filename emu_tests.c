@@ -98,10 +98,13 @@ static u32 ram[GUEST_WORDS] __attribute__((aligned(64)));
     ((op) << 26 | (rs) << 21 | (rt) << 16 | (rd) << 11 | (sa) << 6 | (fn))
 #define I(op, rs, rt, imm) ((op) << 26 | (rs) << 21 | (rt) << 16 | ((imm) & 0xffff))
 
-// Checksums and rewrites 1024 words at 0x1000
+// Checksums and rewrites 512 words (2 KB) at 0x1800. The data cache has 4 KB
+// per way: with 4 KB of guest data, or data a multiple of 4 KB from the guest
+// code, the guest code and the jump tables of the interpreter competed for one
+// way, so the speed depended on where the linker put the tables.
 static const u32 prog_r3000[] = {
-    I(0x09, 0, 8, 0x1000),     // addiu $t0, $zero, 0x1000
-    I(0x09, 0, 9, 1024),       // addiu $t1, $zero, 1024
+    I(0x09, 0, 8, 0x1800),     // addiu $t0, $zero, 0x1800
+    I(0x09, 0, 9, 512),        // addiu $t1, $zero, 512
     I(0x09, 0, 2, 0),          // addiu $v0, $zero, 0
     I(0x0f, 0, 3, 0x1234),     // lui   $v1, 0x1234
     I(0x23, 8, 10, 0),         // loop: lw $t2, 0($t0)
@@ -119,7 +122,7 @@ static const u32 prog_r3000[] = {
     I(0x09, 8, 8, 4),          // addiu $t0, $t0, 4 (delay slot)
     R(0, 0, 0, 0, 0, 0x0c),    // syscall: stop
 };
-#define R3000_INSTRS (4 + 1024 * 13 + 1)
+#define R3000_INSTRS (4 + 512 * 13 + 1)
 
 static void init_r3000(void) {
     for (int i = 0; i < GUEST_WORDS; i++)
@@ -142,7 +145,7 @@ static u32 r3000(void) {
             switch (in & 63) {
             case 0x00: r[rd] = r[rt] << ((in >> 6) & 31); break;
             case 0x02: r[rd] = r[rt] >> ((in >> 6) & 31); break;
-            case 0x0c: return app_hash(&ram[0x400], 4096) ^ r[2];
+            case 0x0c: return app_hash(&ram[0x600], 2048) ^ r[2];
             case 0x21: r[rd] = r[rs] + r[rt]; break;
             case 0x23: r[rd] = r[rs] - r[rt]; break;
             case 0x24: r[rd] = r[rs] & r[rt]; break;
