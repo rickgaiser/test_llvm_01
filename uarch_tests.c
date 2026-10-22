@@ -834,6 +834,14 @@ KERNEL(k_vdiv_x4, 16, VU0_ONES_SETUP,
        VDIV7W VWAITQ VADDQW)
 // vaddq.x to a use of the field
 KERNEL(k_vaddq_vadd, 16, VU0_ONES_SETUP, VDIV7X VWAITQ VADDQX VADD_2_1)
+// The same without vwaitq: does reading Q wait for the division?
+KERNEL(k_vdiv_vaddq_nowait, 16, VU0_ONES_SETUP, VDIV7X VADDQX)
+KERNEL(k_vaddq_vadd_nowait, 16, VU0_ONES_SETUP, VDIV7X VADDQX VADD_2_1)
+#define VNOP W(0x4a0002ff)          // vnop
+KERNEL(k_vdiv_vnop_vaddq, 16, VU0_ONES_SETUP, VDIV7X VNOP VADDQX)
+KERNEL(k_vdiv_vnop2_vaddq, 16, VU0_ONES_SETUP, VDIV7X VNOP VNOP VADDQX)
+KERNEL(k_vdiv_vnop2, 16, VU0_ONES_SETUP, VDIV7X VNOP VNOP)
+KERNEL(k_vnop, 64, VU0_ONES_SETUP, VNOP)
 
 // STREAM Sum loop bodies: each load is followed by the add of the load LAG
 // loads before it (the compiler emits LAG 2 without and LAG 1 with partial
@@ -1310,6 +1318,58 @@ static u32 hazard_mfc1(int reps) {
 }
 
 // As hazard_fcc, with the condition read by cfc1 right after c.eq.s
+// Q is 3/1, then vdiv 5/1 and, after N vnops, vaddq.x without vwaitq: the
+// low word of the result is 5.0 (0x40a00000) if the read waits for the
+// division, 3.0 (0x40400000) if it reads the old Q.
+#define VDIV_Q_CHECK_GAP(NAME, GAP)                                        \
+    static u32 NAME(void) {                                                \
+        u32 r;                                                             \
+        __asm__ __volatile__(                                              \
+            ".set push\n.set noreorder\n.set noat\n"                       \
+            "li $8, 0x40a00000\n" "li $9, 0x3f800000\n"                    \
+            "li $10, 0x40400000\n"                                         \
+            W(0x48a80800) /* qmtc2 $8, $vf1 */                             \
+            W(0x48a91000) /* qmtc2 $9, $vf2 */                             \
+            W(0x48aa1800) /* qmtc2 $10, $vf3 */                            \
+            W(0x4a021bbc) /* vdiv $Q, $vf3x, $vf2x */                      \
+            W(0x4a0003bf) /* vwaitq */                                     \
+            W(0x4a020bbc) /* vdiv $Q, $vf1x, $vf2x */                      \
+            GAP                                                            \
+            W(0x4b000160) /* vaddq.x $vf5, $vf0, $Q */                     \
+            W(0x482b2800) /* qmfc2 $11, $vf5 */                            \
+            W(0x4a0003bf) /* vwaitq */                                     \
+            "sll %0, $11, 0\n"                                             \
+            ".set pop\n"                                                   \
+            : "=r"(r)                                                      \
+            :                                                              \
+            : "$8", "$9", "$10", "$11", "memory");                         \
+        return r;                                                          \
+    }
+#define VDIV_Q_CHECK(N)                                                    \
+    VDIV_Q_CHECK_GAP(check_vdiv_q##N,                                      \
+                     ".rept " #N "\n" W(0x4a0002ff) /* vnop */ ".endr\n")
+#define VDIV_Q_CHECK_NOP(N)                                                \
+    VDIV_Q_CHECK_GAP(check_vdiv_q_nop##N, ".rept " #N "\nnop\n.endr\n")
+// vadd.xyzw $vf4, $vf2, $vf2: an independent VU0 operation
+#define VDIV_Q_CHECK_VADD(N)                                               \
+    VDIV_Q_CHECK_GAP(check_vdiv_q_vadd##N,                                 \
+                     ".rept " #N "\n" W(0x4be21128) ".endr\n")
+VDIV_Q_CHECK(0)
+VDIV_Q_CHECK(1)
+VDIV_Q_CHECK(2)
+VDIV_Q_CHECK(4)
+VDIV_Q_CHECK(6)
+VDIV_Q_CHECK_NOP(1)
+VDIV_Q_CHECK_NOP(2)
+VDIV_Q_CHECK_NOP(3)
+VDIV_Q_CHECK_NOP(4)
+VDIV_Q_CHECK_NOP(5)
+VDIV_Q_CHECK_NOP(6)
+VDIV_Q_CHECK_NOP(8)
+VDIV_Q_CHECK_VADD(1)
+VDIV_Q_CHECK_VADD(2)
+VDIV_Q_CHECK_VADD(4)
+
 static u32 hazard_cfc1(int reps) {
     u32 sum;
     __asm__ __volatile__(
@@ -1386,6 +1446,26 @@ void uarch_run_all(u32 *big, int big_words) {
            (unsigned long long)check_pmfhl(-123456789, 987654321));
     printf("Result: c.eq.s,cfc1 sum %u (expect 250000)\n",
            (unsigned)hazard_cfc1(1000));
+    // One printf per line: the console only shows the first line of one.
+    printf("Result: vdiv,vaddq 0x%08x (0x40a00000 = waits, 0x40400000 = old Q)\n",
+           (unsigned)check_vdiv_q0());
+    printf("Result: vdiv,1 vnop,vaddq 0x%08x\n", (unsigned)check_vdiv_q1());
+    printf("Result: vdiv,2 vnop,vaddq 0x%08x\n", (unsigned)check_vdiv_q2());
+    printf("Result: vdiv,4 vnop,vaddq 0x%08x\n", (unsigned)check_vdiv_q4());
+    printf("Result: vdiv,6 vnop,vaddq 0x%08x\n", (unsigned)check_vdiv_q6());
+    printf("Result: vdiv,1 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop1());
+    printf("Result: vdiv,2 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop2());
+    printf("Result: vdiv,3 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop3());
+    printf("Result: vdiv,4 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop4());
+    printf("Result: vdiv,5 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop5());
+    printf("Result: vdiv,6 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop6());
+    printf("Result: vdiv,8 nop,vaddq 0x%08x\n", (unsigned)check_vdiv_q_nop8());
+    printf("Result: vdiv,1 vadd,vaddq 0x%08x\n",
+           (unsigned)check_vdiv_q_vadd1());
+    printf("Result: vdiv,2 vadd,vaddq 0x%08x\n",
+           (unsigned)check_vdiv_q_vadd2());
+    printf("Result: vdiv,4 vadd,vaddq 0x%08x\n",
+           (unsigned)check_vdiv_q_vadd4());
     static u32 buf[16] __attribute__((aligned(64)));
     buf[0] = (u32)&buf[0];
     buf[1] = 0;
@@ -1779,6 +1859,13 @@ void uarch_run_all(u32 *big, int big_words) {
         {"vdiv,vwaitq,vaddq", k_vdiv_vaddq, 16, "rep", "?"},
         {"4x vdiv,vwaitq,vaddq", k_vdiv_x4, 16, "group", "?"},
         {"vdiv..vaddq->vadd", k_vaddq_vadd, 16, "rep", "?"},
+        {"vdiv,vaddq no vwaitq", k_vdiv_vaddq_nowait, 16, "rep",
+         "10 = waits"},
+        {"..vaddq->vadd no vwaitq", k_vaddq_vadd_nowait, 16, "rep", "?"},
+        {"vdiv,vnop,vaddq", k_vdiv_vnop_vaddq, 16, "rep", "?"},
+        {"vdiv,2 vnop,vaddq", k_vdiv_vnop2_vaddq, 16, "rep", "?"},
+        {"vdiv,2 vnop", k_vdiv_vnop2, 16, "rep", "?"},
+        {"vnop", k_vnop, 64, "instr", "?"},
     };
 
     run_table("Divide, multiply-add, HI/LO, SA, ldl/ldr", intx,
