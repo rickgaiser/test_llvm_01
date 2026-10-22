@@ -777,6 +777,30 @@ KERNEL(k_uload_stack_vadd, 64, VU0_SETUP,
 // Conversion and shuffle chains: = latency
 KERNEL(k_vftoi0_vitof0, 64, VU0_SETUP, VFTOI0_1 VITOF0_1)
 KERNEL(k_vmr32, 64, VU0_SETUP, VMR32_1)
+// Divides: $vf7 = $vf8 = 1.0 in all fields
+#define VU0_ONES_SETUP                                               \
+    VU0_SETUP "lui $8, 0x3f80\n" PEXTLW(8, 8, 8) PCPYLD(8, 8, 8)     \
+    W(0x48a83800) W(0x48a84000)
+#define VDIV7X W(0x4a083bbc)        // vdiv $Q, $vf7x, $vf8x
+#define VDIV7Y W(0x4aa83bbc)        // vdiv $Q, $vf7y, $vf8y
+#define VDIV7Z W(0x4b483bbc)        // vdiv $Q, $vf7z, $vf8z
+#define VDIV7W W(0x4be83bbc)        // vdiv $Q, $vf7w, $vf8w
+#define VADDQX W(0x4b0000e0)        // vaddq.x $vf3, $vf0, $Q
+#define VADDQY W(0x4a8000e0)        // vaddq.y $vf3, $vf0, $Q
+#define VADDQZ W(0x4a4000e0)        // vaddq.z $vf3, $vf0, $Q
+#define VADDQW W(0x4a2000e0)        // vaddq.w $vf3, $vf0, $Q
+#define DIVS0 "div.s $f0, $f8, $f9\n"
+#define DIVS1 "div.s $f1, $f8, $f9\n"
+KERNEL(k_divs_divs, 16, VU0_ONES_SETUP, DIVS0 DIVS1)
+KERNEL(k_divs_vdiv, 16, VU0_ONES_SETUP, DIVS0 VDIV7X VWAITQ)
+KERNEL(k_divs2_vdiv2, 16, VU0_ONES_SETUP,
+       DIVS0 VDIV7X VWAITQ VADDQX DIVS1 VDIV7Y VWAITQ VADDQY)
+KERNEL(k_vdiv_vaddq, 16, VU0_ONES_SETUP, VDIV7X VWAITQ VADDQX)
+KERNEL(k_vdiv_x4, 16, VU0_ONES_SETUP,
+       VDIV7X VWAITQ VADDQX VDIV7Y VWAITQ VADDQY VDIV7Z VWAITQ VADDQZ
+       VDIV7W VWAITQ VADDQW)
+// vaddq.x to a use of the field
+KERNEL(k_vaddq_vadd, 16, VU0_ONES_SETUP, VDIV7X VWAITQ VADDQX VADD_2_1)
 
 // STREAM Sum loop bodies: each load is followed by the add of the load LAG
 // loads before it (the compiler emits LAG 2 without and LAG 1 with partial
@@ -1705,6 +1729,12 @@ void uarch_run_all(u32 *big, int big_words) {
         {"uload via stack, lqc2", k_uload_stack_vadd, 64, "rep", "to vadd"},
         {"vftoi0+vitof0", k_vftoi0_vitof0, 64, "2instr", "?"},
         {"vmr32", k_vmr32, 64, "instr", "?"},
+        {"div.s|div.s", k_divs_divs, 16, "pair", "7 = pipelined"},
+        {"div.s|vdiv,vwaitq", k_divs_vdiv, 16, "group", "9 = parallel"},
+        {"2x div.s|vdiv,vaddq", k_divs2_vdiv2, 16, "group", "?"},
+        {"vdiv,vwaitq,vaddq", k_vdiv_vaddq, 16, "rep", "?"},
+        {"4x vdiv,vwaitq,vaddq", k_vdiv_x4, 16, "group", "?"},
+        {"vdiv..vaddq->vadd", k_vaddq_vadd, 16, "rep", "?"},
     };
 
     run_table("Divide, multiply-add, HI/LO, SA, ldl/ldr", intx,
