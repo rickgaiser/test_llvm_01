@@ -148,6 +148,10 @@ static struct {
     int x, y, z, pad;
 } screen[NUM_VERTS] __attribute__((aligned(16)));
 static u32 colors[NUM_VERTS];
+// A model-view matrix in memory, rows of the struct form: not a static, so
+// it is not folded into the code
+vec4 geom_model_view[4];
+static vec4 xformed[NUM_VERTS];
 static u16 visible[NUM_TRIS * 3];
 
 // A small signed multiple of 1/8, so products and sums stay exact
@@ -191,6 +195,89 @@ static u32 transform(void) {
         screen[i].z = (int)(iw * 65536.0f + 0.5f);
         screen[i].pad = (int)(z * 16.0f);
     }
+    return app_hash(screen, sizeof(screen));
+}
+
+static void init_mxv(void) {
+    init_geom();
+    for (int r = 0; r < 4; r++)
+        geom_model_view[r] = (vec4){eighths(1), eighths(1), eighths(1),
+                                    eighths(8)};
+}
+
+// A 4x4 matrix times each vertex, with the matrix in rows (each output is
+// the dot product of a row with the vertex)
+static void __attribute__((noinline))
+mxv_row4(const vec4 *restrict m, const vec4 *restrict in, vec4 *restrict out,
+         int n) {
+    for (int i = 0; i < n; i++) {
+        vec4 v = in[i];
+        out[i].x = m[0].x * v.x + m[0].y * v.y + m[0].z * v.z + m[0].w * v.w;
+        out[i].y = m[1].x * v.x + m[1].y * v.y + m[1].z * v.z + m[1].w * v.w;
+        out[i].z = m[2].x * v.x + m[2].y * v.y + m[2].z * v.z + m[2].w * v.w;
+        out[i].w = m[3].x * v.x + m[3].y * v.y + m[3].z * v.z + m[3].w * v.w;
+    }
+}
+
+// The same with the matrix in columns (the output is the sum of the columns
+// scaled by the lanes of the vertex)
+static void __attribute__((noinline))
+mxv_col4(const vec4 *restrict m, const vec4 *restrict in, vec4 *restrict out,
+         int n) {
+    for (int i = 0; i < n; i++) {
+        vec4 v = in[i];
+        out[i].x = m[0].x * v.x + m[1].x * v.y + m[2].x * v.z + m[3].x * v.w;
+        out[i].y = m[0].y * v.x + m[1].y * v.y + m[2].y * v.z + m[3].y * v.w;
+        out[i].z = m[0].z * v.x + m[1].z * v.y + m[2].z * v.z + m[3].z * v.w;
+        out[i].w = m[0].w * v.x + m[1].w * v.y + m[2].w * v.z + m[3].w * v.w;
+    }
+}
+
+// An affine 3x4 matrix in rows (translation in w) to 12.4 fixed point
+static void __attribute__((noinline))
+mxv_row3(const vec4 *restrict m, const vec4 *restrict in, int n) {
+    for (int i = 0; i < n; i++) {
+        vec4 v = in[i];
+        float x = m[0].x * v.x + m[0].y * v.y + m[0].z * v.z + m[0].w;
+        float y = m[1].x * v.x + m[1].y * v.y + m[1].z * v.z + m[1].w;
+        float z = m[2].x * v.x + m[2].y * v.y + m[2].z * v.z + m[2].w;
+        screen[i].x = (int)(x * 16.0f);
+        screen[i].y = (int)(y * 16.0f);
+        screen[i].z = (int)(z * 16.0f);
+    }
+}
+
+// The same with the matrix in columns (translation in column 3)
+static void __attribute__((noinline))
+mxv_col3(const vec4 *restrict m, const vec4 *restrict in, int n) {
+    for (int i = 0; i < n; i++) {
+        vec4 v = in[i];
+        float x = m[0].x * v.x + m[1].x * v.y + m[2].x * v.z + m[3].x;
+        float y = m[0].y * v.x + m[1].y * v.y + m[2].y * v.z + m[3].y;
+        float z = m[0].z * v.x + m[1].z * v.y + m[2].z * v.z + m[3].z;
+        screen[i].x = (int)(x * 16.0f);
+        screen[i].y = (int)(y * 16.0f);
+        screen[i].z = (int)(z * 16.0f);
+    }
+}
+
+static u32 mxv_row_4x4(void) {
+    mxv_row4(geom_model_view, verts, xformed, NUM_VERTS);
+    return app_hash(xformed, sizeof(xformed));
+}
+
+static u32 mxv_col_4x4(void) {
+    mxv_col4(geom_model_view, verts, xformed, NUM_VERTS);
+    return app_hash(xformed, sizeof(xformed));
+}
+
+static u32 mxv_row_3x4(void) {
+    mxv_row3(geom_model_view, verts, NUM_VERTS);
+    return app_hash(screen, sizeof(screen));
+}
+
+static u32 mxv_col_3x4(void) {
+    mxv_col3(geom_model_view, verts, NUM_VERTS);
     return app_hash(screen, sizeof(screen));
 }
 
@@ -287,6 +374,10 @@ static u32 frustum_cull(void) {
 static const app_test geom_tests[] = {
     {"Transform", "Mvert/s", NUM_VERTS, init_geom, transform},
     {"Lighting", "Mvert/s", NUM_VERTS, init_geom, lighting},
+    {"MxV Row 4x4", "Mvert/s", NUM_VERTS, init_mxv, mxv_row_4x4},
+    {"MxV Col 4x4", "Mvert/s", NUM_VERTS, init_mxv, mxv_col_4x4},
+    {"MxV Row 3x4", "Mvert/s", NUM_VERTS, init_mxv, mxv_row_3x4},
+    {"MxV Col 3x4", "Mvert/s", NUM_VERTS, init_mxv, mxv_col_3x4},
     {"Backface Cull", "Mtri/s", NUM_TRIS, init_cull, backface_cull},
     {"Frustum Cull", "Mobj/s", NUM_SPHERES, init_spheres, frustum_cull},
 };
