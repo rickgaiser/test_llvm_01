@@ -758,6 +758,22 @@ KERNEL(k_qmfc2_pcpyud_mtc1, 64, VU0_SETUP,
        QMFC2_10_5 PCPYUD(11, 10, 10) "mtc1 $11, $f4\n")
 KERNEL(k_pextlw_qmtc2_vadd, 64, VU0_SETUP,
        PEXTLW(9, 12, 13) QMTC2_9_1 VADD_2_1)
+// Broadcast forms and horizontal sums
+#define VADDY_1 W(0x4be20841)       // vaddy.xyzw $vf1, $vf1, $vf2
+#define VADDY_3 W(0x4be628c1)       // vaddy.xyzw $vf3, $vf5, $vf6
+#define VADDZ_4 W(0x4be62902)       // vaddz.xyzw $vf4, $vf5, $vf6
+#define VADDY_11 W(0x4be10841)      // vaddy.xyzw $vf1, $vf1, $vf1
+#define VADDZ_11 W(0x4be10842)      // vaddz.xyzw $vf1, $vf1, $vf1
+#define VADDW_11 W(0x4be10843)      // vaddw.xyzw $vf1, $vf1, $vf1
+#define VMULAX_21 W(0x4be111bc)     // vmulax.xyzw $ACC, $vf2, $vf1
+#define VMADDAY_21 W(0x4be110bd)    // vmadday.xyzw $ACC, $vf2, $vf1
+#define VMADDAZ_21 W(0x4be110be)    // vmaddaz.xyzw $ACC, $vf2, $vf1
+#define VMADDW_21 W(0x4be1104b)     // vmaddw.xyzw $vf1, $vf2, $vf1
+KERNEL(k_vaddy, 64, VU0_SETUP, VADDY_1)
+KERNEL(k_vaddy_vaddz, 64, VU0_SETUP, VADDY_3 VADDZ_4)
+KERNEL(k_hsum_bc, 64, VU0_SETUP, VADDY_11 VADDZ_11 VADDW_11)
+KERNEL(k_hsum_acc, 64, VU0_SETUP, VMULAX_21 VMADDAY_21 VMADDAZ_21 VMADDW_21)
+KERNEL(k_vmulax_vmaddw, 64, VU0_SETUP, VMULAX_21 VMADDW_21)
 KERNEL(k_sqc2_lw_use, 64, VU0_SETUP,
        SQC2_3 "lw $10, 32($24)\n" "addu $11, $10, $12\n")
 #define LQC2_1_32 W(0xdb010020)     // lqc2 $vf1, 32($24)
@@ -1721,6 +1737,12 @@ void uarch_run_all(u32 *big, int big_words) {
         {"qmfc2->mtc1->add.s", k_qmfc2_mtc1_use, 64, "rep", "= latency"},
         {"qmfc2,pcpyud,mtc1", k_qmfc2_pcpyud_mtc1, 64, "rep", "= latency"},
         {"pextlw->qmtc2->vadd", k_pextlw_qmtc2_vadd, 64, "rep", "= latency"},
+        {"vaddy", k_vaddy, 64, "instr", "?"},
+        {"vaddy|vaddz", k_vaddy_vaddz, 64, "pair", "1 = paired"},
+        {"hsum vaddy,vaddz,vaddw", k_hsum_bc, 64, "rep", "= latency"},
+        {"hsum vmulax,vmadda y/z,vmaddw", k_hsum_acc, 64, "rep",
+         "= latency"},
+        {"vmulax+vmaddw", k_vmulax_vmaddw, 64, "2instr", "?"},
         {"sqc2->lw->addu", k_sqc2_lw_use, 64, "rep", "= latency"},
         {"sw->lqc2->vadd", k_sw_lqc2_vadd, 64, "rep", "= latency"},
         {"4 sw->lqc2->vadd", k_sw4_lqc2_vadd, 64, "rep", "= latency"},
