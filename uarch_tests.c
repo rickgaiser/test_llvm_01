@@ -1355,6 +1355,57 @@ KERNEL_RAW64(k_walk_s_vnop_l, WALK_SETUP,
              SQC2_W2_0 VNOP4 LQC2_W4_0 SQC2_W2_1 VNOP4 LQC2_W4_1
              SQC2_W2_2 VNOP4 LQC2_W4_2 SQC2_W2_3 VNOP4 LQC2_W4_3 WALK_END)
 
+// A load d bytes after (before for m) the store before it, 4 times per
+// iteration, at fixed addresses: $5 = p + 4096.
+#define LQC2_D16 W(0xd8a70010) // lqc2 $vf7, 16($5)
+#define LQC2_D64 W(0xd8a70040) // lqc2 $vf7, 64($5)
+#define LQC2_D128 W(0xd8a70080) // lqc2 $vf7, 128($5)
+#define LQC2_D256 W(0xd8a70100) // lqc2 $vf7, 256($5)
+#define LQC2_D512 W(0xd8a70200) // lqc2 $vf7, 512($5)
+#define LQC2_D1024 W(0xd8a70400) // lqc2 $vf7, 1024($5)
+#define LQC2_D2048 W(0xd8a70800) // lqc2 $vf7, 2048($5)
+#define LQC2_D3072 W(0xd8a70c00) // lqc2 $vf7, 3072($5)
+#define LQC2_D4096 W(0xd8a71000) // lqc2 $vf7, 4096($5)
+#define LQC2_D8192 W(0xd8a72000) // lqc2 $vf7, 8192($5)
+#define LQC2_Dm1024 W(0xd8a7fc00) // lqc2 $vf7, -1024($5)
+#define LQC2_Dm4096 W(0xd8a7f000) // lqc2 $vf7, -4096($5)
+KERNEL_RAW64(k_sl_d16, WALK_SETUP,
+             SQC2_W5_0 LQC2_D16 SQC2_W5_0 LQC2_D16 SQC2_W5_0 LQC2_D16
+             SQC2_W5_0 LQC2_D16 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_d64, WALK_SETUP,
+             SQC2_W5_0 LQC2_D64 SQC2_W5_0 LQC2_D64 SQC2_W5_0 LQC2_D64
+             SQC2_W5_0 LQC2_D64 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_d128, WALK_SETUP,
+             SQC2_W5_0 LQC2_D128 SQC2_W5_0 LQC2_D128 SQC2_W5_0 LQC2_D128
+             SQC2_W5_0 LQC2_D128 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_d256, WALK_SETUP,
+             SQC2_W5_0 LQC2_D256 SQC2_W5_0 LQC2_D256 SQC2_W5_0 LQC2_D256
+             SQC2_W5_0 LQC2_D256 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_d512, WALK_SETUP,
+             SQC2_W5_0 LQC2_D512 SQC2_W5_0 LQC2_D512 SQC2_W5_0 LQC2_D512
+             SQC2_W5_0 LQC2_D512 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_d1024, WALK_SETUP,
+             SQC2_W5_0 LQC2_D1024 SQC2_W5_0 LQC2_D1024 SQC2_W5_0 LQC2_D1024
+             SQC2_W5_0 LQC2_D1024 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_d2048, WALK_SETUP,
+             SQC2_W5_0 LQC2_D2048 SQC2_W5_0 LQC2_D2048 SQC2_W5_0 LQC2_D2048
+             SQC2_W5_0 LQC2_D2048 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_d3072, WALK_SETUP,
+             SQC2_W5_0 LQC2_D3072 SQC2_W5_0 LQC2_D3072 SQC2_W5_0 LQC2_D3072
+             SQC2_W5_0 LQC2_D3072 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_d4096, WALK_SETUP,
+             SQC2_W5_0 LQC2_D4096 SQC2_W5_0 LQC2_D4096 SQC2_W5_0 LQC2_D4096
+             SQC2_W5_0 LQC2_D4096 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_d8192, WALK_SETUP,
+             SQC2_W5_0 LQC2_D8192 SQC2_W5_0 LQC2_D8192 SQC2_W5_0 LQC2_D8192
+             SQC2_W5_0 LQC2_D8192 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_dm1024, WALK_SETUP,
+             SQC2_W5_0 LQC2_Dm1024 SQC2_W5_0 LQC2_Dm1024 SQC2_W5_0 LQC2_Dm1024
+             SQC2_W5_0 LQC2_Dm1024 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_dm4096, WALK_SETUP,
+             SQC2_W5_0 LQC2_Dm4096 SQC2_W5_0 LQC2_Dm4096 SQC2_W5_0 LQC2_Dm4096
+             SQC2_W5_0 LQC2_Dm4096 VNOP16 WALK_END)
+
 // The same with the output at other distances from the input.
 #define MXV_SETUP_OUT(off)                                             \
     "addiu $4, %2, 32\n" "addiu $2, %2, " #off "\n" "sll $3, %3, 2\n"  \
@@ -2156,6 +2207,18 @@ void uarch_run_all(u32 *big, int big_words) {
             {"4 sqc2,4 lqc2 fixed", k_walk_sl_c, "same address"},
             {"(sqc2,lqc2) x4,16 vnop", k_walk_slsl, "walking"},
             {"(sqc2,4 vnop,lqc2) x4", k_walk_s_vnop_l, "walking"},
+            {"(sqc2,lqc2 +16) x4", k_sl_d16, "fixed"},
+            {"(sqc2,lqc2 +64) x4", k_sl_d64, "fixed"},
+            {"(sqc2,lqc2 +128) x4", k_sl_d128, "fixed"},
+            {"(sqc2,lqc2 +256) x4", k_sl_d256, "fixed"},
+            {"(sqc2,lqc2 +512) x4", k_sl_d512, "fixed"},
+            {"(sqc2,lqc2 +1024) x4", k_sl_d1024, "fixed"},
+            {"(sqc2,lqc2 +2048) x4", k_sl_d2048, "fixed"},
+            {"(sqc2,lqc2 +3072) x4", k_sl_d3072, "fixed"},
+            {"(sqc2,lqc2 +4096) x4", k_sl_d4096, "fixed"},
+            {"(sqc2,lqc2 +8192) x4", k_sl_d8192, "fixed"},
+            {"(sqc2,lqc2 -1024) x4", k_sl_dm1024, "fixed"},
+            {"(sqc2,lqc2 -4096) x4", k_sl_dm4096, "fixed"},
         };
         for (int m = 0; m < 2; m++) {
             printf("--- Walking loads and stores, %s (cyc/iter) ---\n",
