@@ -460,6 +460,13 @@ def compile_kernel(gen, kernel, header):
         else:
             raise VukError(f"{pname}: unsupported parameter type")
     header.append(f"#define VUK_{name.upper()}_SIZE {addr}  /* quadwords before any unsized array */")
+    # how a host runtime launches it (maxsdk MX_VUK_KERNEL): the code starts
+    # at micro address 0, each item is one f32x4 quadword sent as UNPACK
+    # V4-32 and transformed in place, at fixed addresses (no double buffer)
+    header.append(f"#define VUK_{name.upper()}_ENTRY 0  /* micro address, 64-bit units */")
+    header.append(f"#define VUK_{name.upper()}_ITEM_QW 1  /* quadwords per item */")
+    header.append(f"#define VUK_{name.upper()}_FORMAT 0x0C  /* UNPACK V4-32 */")
+    header.append(f"#define VUK_{name.upper()}_DBUF 0  /* no double buffering */")
     header.append("")
     gen.stmts(body, env)
     gen.emit("ret void")

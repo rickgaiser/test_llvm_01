@@ -3,6 +3,9 @@
    MODE_MACRO: everything on VU0 in macro mode (COP2 code from clang).
    MODE_MICRO: everything on VU0 in micro mode (poly4.vuk), in batches.
    MODE_ALL:   VU1 micro, VU0 micro and the EE FPU at the same time.
+   MODE_SCHED: the same three units through maxsdk's mx_sched: one pool of
+               quadwords that the VU workers take in batches and the FPU in
+               small chunks, so the work spreads by the speed of each unit.
    MODE_BENCH: each unit alone, then all together, for timing on the PS2.
 
    All runs compute the same array, so they all have the same checksum,
@@ -12,6 +15,7 @@
    tags from the data, UNPACK, MSCAL, FLUSHE), VU0 batches through COP2
    transfers (or a VIF0 queue with VU0_DMA=1), as ps2gl/ps2stuff do. */
 #include <mx/mx.h>
+#include <mx/sched.h>
 
 #include "demo.h"
 #include "expected.h"
@@ -60,6 +64,12 @@ static f32x4 head[VUK_POLY_SIZE] __attribute__((aligned(16)));
    on the PS2 (maxsdk docs/vu1.md). */
 #ifndef VU1_DMA_READ
 #define VU1_DMA_READ 1
+#endif
+
+/* VU0's results back by DMA through the scratchpad too (with VU0_DMA; maxsdk
+   phase 5), instead of COP2 reads. */
+#ifndef VU0_DMA_READ
+#define VU0_DMA_READ 1
 #endif
 
 static struct mx_vuq q[2];
@@ -138,6 +148,41 @@ static __attribute__((unused)) void run_all(void) {
   batch_finish(1, x + (ROUNDS - 1) * N_ROUND + N_VU0, N_VU1_ROUND);
 }
 
+/* mx_sched: the VU0 and VU1 workers take batches from the pool as soon as
+   their VU is idle; the FPU takes SCHED_CHUNK quadwords at a time between
+   polls. Batches and chunks are multiples of 4 quadwords (a cache line):
+   a line shared by an FPU chunk (written through the cache) and a VU batch
+   (read back to memory) would be written back over the VU's results. */
+#ifndef SCHED_CHUNK
+#define SCHED_CHUNK 8
+#endif
+#ifndef SCHED_VU1
+#define SCHED_VU1 240
+#endif
+static u32 sched_items[3];
+
+static void fpu_chunk(u32 first, u32 n, void *arg) {
+  (void)arg;
+  poly_fpu((float *)&x[first], c, 4 * n);
+  sched_items[2] += n;
+}
+
+static __attribute__((unused)) void run_sched(void) {
+  static struct mx_pool pool;
+  static struct mx_vu_worker w[2];
+  mx_pool_init(&pool, N_TOTAL);
+  mx_vu_worker_init(&w[0], &q[0], &kern[0], head, x, MX_UCAB(x), &pool, N_VU0);
+  mx_vu_worker_init(&w[1], &q[1], &kern[1], head, x, MX_UCAB(x), &pool, SCHED_VU1);
+  mx_sched_add(&w[0].task);
+  mx_sched_add(&w[1].task);
+  sched_items[2] = 0;
+  mx_sched_ee_pool(&pool, SCHED_CHUNK, fpu_chunk, 0);
+  mx_sched_remove(&w[0].task);
+  mx_sched_remove(&w[1].task);
+  sched_items[0] = w[0].items;
+  sched_items[1] = w[1].items;
+}
+
 static const struct {
   const char *name;
   void (*run)(void);
@@ -148,12 +193,15 @@ static const struct {
     {"VU0 micro", run_micro},
 #elif defined(MODE_ALL)
     {"FPU + VU0 micro + VU1 micro", run_all},
+#elif defined(MODE_SCHED)
+    {"FPU + VU0 micro + VU1 micro, mx_sched", run_sched},
 #else
     {"FPU", run_fpu},
     {"VU1 micro", run_vu1},
     {"VU0 macro", run_macro},
     {"VU0 micro", run_micro},
     {"FPU + VU0 micro + VU1 micro", run_all},
+    {"FPU + VU0 micro + VU1 micro, mx_sched", run_sched},
 #endif
 };
 
@@ -206,7 +254,9 @@ int main(void) {
   mx_vuq_init(&q[0], 0, VU0_DMA);
   mx_vuq_init(&q[1], 1, 1);
   if (VU1_DMA_READ)
-    mx_vuq_readback_spr(&q[1], (void *)0x70000000, 0x4000);
+    mx_vuq_readback_spr(&q[1], (void *)0x70000000, 0x2000);
+  if (VU0_DMA && VU0_DMA_READ)
+    mx_vuq_readback_spr(&q[0], (void *)0x70002000, 0x2000);
 
   for (unsigned r = 0; r < sizeof(runs) / sizeof(runs[0]); r++) {
     demo_init((float *)x, c);
@@ -231,6 +281,9 @@ int main(void) {
     /* EE cycles; PCSX2 timings are not performance data */
     mx_printf("  Cycles: %u (%u.%02u per quadword)\n", t1 - t0, (t1 - t0) / N_TOTAL,
               (t1 - t0) % N_TOTAL * 100 / N_TOTAL);
+    if (runs[r].run == run_sched)
+      mx_printf("  mx_sched: VU0 %u, VU1 %u, FPU %u quadwords\n", sched_items[0], sched_items[1],
+                sched_items[2]);
     for (int vu = 0; vu < 2; vu++)
       if (phase[vu][0] | phase[vu][1] | phase[vu][2])
         mx_printf("  VU%d batches: send %u, wait %u, read %u cycles\n", vu, phase[vu][0],

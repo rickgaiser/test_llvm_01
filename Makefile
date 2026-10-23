@@ -2,6 +2,7 @@
 #
 #   make COMPILER=gcc                         OUT=<dir>
 #   make COMPILER=clang CLANG=<path to clang> OUT=<dir>
+#   make COMPILER=clang SDK=maxsdk OUT=<dir>   on maxsdk + picolibc, no ps2sdk
 #
 # Normally driven by bench.sh.
 
@@ -29,12 +30,31 @@ CFLAGS = $(CFLAGS_COMMON) -I$(PS2DEV)/ee/mips64r5900el-ps2-elf/include \
          --target=mips64el -mcpu=r5900 -mabi=n32 -fno-pic -mno-abicalls -G 0 \
          -ffp-contract=fast -fomit-frame-pointer
 endif
+ifeq ($(SDK),maxsdk)
+# maxsdk (../maxsdk) with picolibc: its compat headers give the few ps2sdk
+# calls used here (tamtypes.h, timer.h, kernel.h)
+MAXSDK   ?= $(abspath ../maxsdk)
+PS2MAX   ?= $(abspath ../../../..)
+MX_OUT   ?= $(PS2MAX)/toolchain/build/maxsdk/clang
+PICOLIBC ?= $(PS2MAX)/toolchain/build/picolibc/install
+LLVM     ?= $(dir $(CLANG))
+CFLAGS    = -Wall -O3 -ffast-math -I. -isystem $(PICOLIBC)/include -I$(MAXSDK)/compat/ps2sdk \
+            -I$(MAXSDK)/include --target=mips64el -mcpu=r5900 -mabi=n32 -fno-pic -mno-abicalls \
+            -G 0 -ffp-contract=fast -fomit-frame-pointer
+MX_LIBS   = $(MX_OUT)/libmxc.a $(PICOLIBC)/lib/libc.a $(MX_OUT)/libmx.a $(MX_OUT)/librt.a
+endif
 CFLAGS += $(EXTRA_CFLAGS)
 
 all: $(BIN) $(ASMS)
 
+ifeq ($(SDK),maxsdk)
+$(BIN): $(OBJS)
+	$(LLVM)ld.lld -m elf32ltsmipn32 -T$(MAXSDK)/ld/maxsdk.ld -z max-page-size=128 --gc-sections \
+	  -o $@ $(MX_OUT)/obj/crt0.o $^ $(MX_LIBS)
+else
 $(BIN): $(OBJS)
 	$(EE_GCC) -o $@ $^ $(LDFLAGS)
+endif
 
 $(OUT)/%.o: %.c *.h | $(OUT)
 	$(CC) $(CFLAGS) -c $< -o $@

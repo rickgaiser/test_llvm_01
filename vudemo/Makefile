@@ -33,7 +33,7 @@ MX_CRT0 = $(MX_OUT)/obj/crt0.o
 LINK    = $(LLVM)/ld.lld -m elf32ltsmipn32 -T$(MAXSDK)/ld/maxsdk.ld -z max-page-size=128 \
           --gc-sections
 
-MODES = macro micro all bench debug
+MODES = macro micro all sched bench debug
 ELFS  = $(MODES:%=$(OUT)/vudemo_%.elf)
 
 all: $(ELFS) $(OUT)/mulprobe.elf $(OUT)/vu0_poly.s $(OUT)/vu1_poly.s
