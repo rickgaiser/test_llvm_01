@@ -11,10 +11,30 @@
 
 #define NUM_ITERATIONS 100000
 
-// PS2 Scratchpad RAM: 16KB at 0x70000000, single-cycle latency
+// PS2 Scratchpad RAM: 16KB at 0x70000000, single-cycle latency.
+// It behaves as 4 banks of 4KB (measured, uarch_tests.c): a load after a
+// store costs 2 cycles more if it is in another 4KB block than the byte
+// after the store (store address + 16), also when they are far apart.
+// Otherwise, or without a store before it, it costs nothing. So each bank
+// holds the outputs of half of the vectors, then their inputs, and the SPRAM
+// tests run once per bank: the loads of a call are in the bank of its
+// stores, also after the last store of the bank.
 #define SPRAM_BASE 0x70000000
-#define SPRAM_VEC_A   ((v4sf*)(SPRAM_BASE))                              // 0x70000000 - 4KB
-#define SPRAM_VEC_OUT ((v4sf*)(SPRAM_BASE + VPU_NUM_VECTORS * sizeof(v4sf)))  // 0x70001000 - 4KB
+#define SPRAM_HALF (VPU_NUM_VECTORS / 2)
+#define SPRAM_OUT(b) ((v4sf*)(SPRAM_BASE + (b) * 4096))                  // 2KB
+#define SPRAM_IN(b)  ((v4sf*)(SPRAM_BASE + (b) * 4096 + SPRAM_HALF * sizeof(v4sf)))
+// n vectors, n / 2 in each bank
+#define SPRAM_RUN(fn, n)                                                  \
+    do {                                                                  \
+        fn(vpu_mat, SPRAM_IN(0), SPRAM_OUT(0), (n) / 2);                  \
+        fn(vpu_mat, SPRAM_IN(1), SPRAM_OUT(1), (n) / 2);                  \
+    } while (0)
+#define SPRAM_LOAD()                                                      \
+    do {                                                                  \
+        memcpy(SPRAM_IN(0), vpu_vec_a, SPRAM_HALF * sizeof(v4sf));        \
+        memcpy(SPRAM_IN(1), vpu_vec_a + SPRAM_HALF,                       \
+               SPRAM_HALF * sizeof(v4sf));                                \
+    } while (0)
 
 // FPU test data
 static float mat_a[MAT_SIZE][MAT_SIZE] = {
@@ -59,7 +79,7 @@ static float vpu_hmax_out[VPU_NUM_VECTORS] __attribute__((aligned(16)));
 static float vpu_hmin_out[VPU_NUM_VECTORS] __attribute__((aligned(16)));
 
 // Larger arrays for main memory (cached) testing
-#define MAIN_MEM_VECS 4080  // 4080 vectors = 65280 bytes, divisible by 12
+#define MAIN_MEM_VECS 4080  // 4080 vectors = 65280 bytes
 static v4sf main_mem_vec_in[MAIN_MEM_VECS] __attribute__((aligned(64)));
 static v4sf main_mem_vec_out[MAIN_MEM_VECS] __attribute__((aligned(64)));
 
@@ -392,11 +412,11 @@ int main() {
     printf("--- Test 11: VPU Mat x Vec v4sf SPRAM (%d vecs x %d batches) ---\n", VPU_NUM_VECTORS, vpu_batches);
 
     // Copy input vectors to scratchpad RAM (single-cycle latency)
-    memcpy(SPRAM_VEC_A, vpu_vec_a, VPU_NUM_VECTORS * sizeof(v4sf));
+    SPRAM_LOAD();
 
     u64 start11 = GetTimerSystemTime();
     for (int iter = 0; iter < vpu_batches; iter++) {
-        vpu_matrix_vector_multiply(vpu_mat, SPRAM_VEC_A, SPRAM_VEC_OUT, VPU_NUM_VECTORS);
+        SPRAM_RUN(vpu_matrix_vector_multiply, VPU_NUM_VECTORS);
     }
     u64 end11 = GetTimerSystemTime();
 
@@ -407,7 +427,7 @@ int main() {
     float vpu_matvec_per_sec = (VPU_NUM_VECTORS * vpu_batches) / (usec11 / 1000000.0f);
 
     printf("First: [%.2f, %.2f, %.2f, %.2f]\n",
-           SPRAM_VEC_OUT[0][0], SPRAM_VEC_OUT[0][1], SPRAM_VEC_OUT[0][2], SPRAM_VEC_OUT[0][3]);
+           SPRAM_OUT(0)[0][0], SPRAM_OUT(0)[0][1], SPRAM_OUT(0)[0][2], SPRAM_OUT(0)[0][3]);
     printf("Time: %llu ticks (%.2f us)\n", ticks11, usec11);
     printf("Performance: %.2f MFLOPS (%.0f vecs/sec)\n\n", mflops_vpu4, vpu_matvec_per_sec);
 
@@ -455,109 +475,47 @@ int main() {
     printf("Performance: %.2f Mvec/s\n\n", mvecs_hm);
 
 #ifdef __mips_vu0
-    // Test 13: VPU Matrix-Vector Multiply ASM variants - using Scratchpad RAM
-    // Use 252 vectors (divisible by 1, 2, 3, 4), 248 for 8v (divisible by 8)
-    int asm_vec_count = 252;
-    int asm_vec_count_8v = 248;
-    float mflops_asm_1v, mflops_asm_2v, mflops_asm_3v, mflops_asm_4v, mflops_asm_8v;
-
-    // Re-copy input vectors to scratchpad
-    memcpy(SPRAM_VEC_A, vpu_vec_a, VPU_NUM_VECTORS * sizeof(v4sf));
-
-    // Test 13a: 1 vertex in flight
-    printf("--- Test 13a: VPU ASM 1v SPRAM (%d vecs x %d batches) ---\n", asm_vec_count, vpu_batches);
-    u64 start13a = GetTimerSystemTime();
+    // Test 13: VPU Matrix-Vector Multiply in assembly - using Scratchpad RAM
+    float mflops_asm;
+    SPRAM_LOAD();
+    printf("--- Test 13: VPU ASM Mat x Vec SPRAM (%d vecs x %d batches) ---\n", VPU_NUM_VECTORS, vpu_batches);
+    u64 start13 = GetTimerSystemTime();
     for (int iter = 0; iter < vpu_batches; iter++) {
-        vpu_matrix_vector_multiply_asm_1v(vpu_mat, SPRAM_VEC_A, SPRAM_VEC_OUT, asm_vec_count);
+        SPRAM_RUN(vpu_matrix_vector_multiply_asm, VPU_NUM_VECTORS);
     }
-    u64 end13a = GetTimerSystemTime();
-    u64 ticks13a = end13a - start13a;
-    float usec13a = (float)ticks13a / 150.0f;
-    mflops_asm_1v = ((float)asm_vec_count * vpu_batches * 28) / usec13a;
+    u64 end13 = GetTimerSystemTime();
+    u64 ticks13 = end13 - start13;
+    float usec13 = (float)ticks13 / 150.0f;
+    mflops_asm = ((float)VPU_NUM_VECTORS * vpu_batches * 28) / usec13;
     printf("First: [%.2f, %.2f, %.2f, %.2f]\n",
-           SPRAM_VEC_OUT[0][0], SPRAM_VEC_OUT[0][1], SPRAM_VEC_OUT[0][2], SPRAM_VEC_OUT[0][3]);
-    printf("Time: %llu ticks, Performance: %.2f MFLOPS\n\n", ticks13a, mflops_asm_1v);
-
-    // Test 13b: 2 vertices in flight
-    printf("--- Test 13b: VPU ASM 2v SPRAM (%d vecs x %d batches) ---\n", asm_vec_count, vpu_batches);
-    u64 start13b = GetTimerSystemTime();
-    for (int iter = 0; iter < vpu_batches; iter++) {
-        vpu_matrix_vector_multiply_asm_2v(vpu_mat, SPRAM_VEC_A, SPRAM_VEC_OUT, asm_vec_count);
+           SPRAM_OUT(0)[0][0], SPRAM_OUT(0)[0][1], SPRAM_OUT(0)[0][2], SPRAM_OUT(0)[0][3]);
+    // Against the matrix product in C. VU0 does not round as IEEE does, so
+    // allow a relative error of 1e-5.
+    int asm_errors = 0;
+    for (int v = 0; v < VPU_NUM_VECTORS; v++) {
+        v4sf in = vpu_vec_a[v];
+        v4sf out = SPRAM_OUT(v / SPRAM_HALF)[v % SPRAM_HALF];
+        for (int c = 0; c < 4; c++) {
+            float ref = vpu_mat[0][c] * in[0] + vpu_mat[1][c] * in[1] +
+                        vpu_mat[2][c] * in[2] + vpu_mat[3][c] * in[3];
+            float err = out[c] - ref, mag = ref < 0 ? -ref : ref;
+            if (err < 0)
+                err = -err;
+            if (err > 1e-5f * (mag > 1.0f ? mag : 1.0f))
+                asm_errors++;
+        }
     }
-    u64 end13b = GetTimerSystemTime();
-    u64 ticks13b = end13b - start13b;
-    float usec13b = (float)ticks13b / 150.0f;
-    mflops_asm_2v = ((float)asm_vec_count * vpu_batches * 28) / usec13b;
-    printf("First: [%.2f, %.2f, %.2f, %.2f]\n",
-           SPRAM_VEC_OUT[0][0], SPRAM_VEC_OUT[0][1], SPRAM_VEC_OUT[0][2], SPRAM_VEC_OUT[0][3]);
-    printf("Time: %llu ticks, Performance: %.2f MFLOPS\n\n", ticks13b, mflops_asm_2v);
+    printf("Result: ASM = C: %s\n", asm_errors ? "NO" : "yes");
+    printf("Time: %llu ticks, Performance: %.2f MFLOPS\n\n", ticks13, mflops_asm);
 
-    // Test 13c: 3 vertices in flight
-    printf("--- Test 13c: VPU ASM 3v SPRAM (%d vecs x %d batches) ---\n", asm_vec_count, vpu_batches);
-    u64 start13c = GetTimerSystemTime();
-    for (int iter = 0; iter < vpu_batches; iter++) {
-        vpu_matrix_vector_multiply_asm_3v(vpu_mat, SPRAM_VEC_A, SPRAM_VEC_OUT, asm_vec_count);
-    }
-    u64 end13c = GetTimerSystemTime();
-    u64 ticks13c = end13c - start13c;
-    float usec13c = (float)ticks13c / 150.0f;
-    mflops_asm_3v = ((float)asm_vec_count * vpu_batches * 28) / usec13c;
-    printf("First: [%.2f, %.2f, %.2f, %.2f]\n",
-           SPRAM_VEC_OUT[0][0], SPRAM_VEC_OUT[0][1], SPRAM_VEC_OUT[0][2], SPRAM_VEC_OUT[0][3]);
-    printf("Time: %llu ticks, Performance: %.2f MFLOPS\n\n", ticks13c, mflops_asm_3v);
-
-    // Test 13d: 4 vertices in flight
-    printf("--- Test 13d: VPU ASM 4v SPRAM (%d vecs x %d batches) ---\n", asm_vec_count, vpu_batches);
-    u64 start13d = GetTimerSystemTime();
-    for (int iter = 0; iter < vpu_batches; iter++) {
-        vpu_matrix_vector_multiply_asm_4v(vpu_mat, SPRAM_VEC_A, SPRAM_VEC_OUT, asm_vec_count);
-    }
-    u64 end13d = GetTimerSystemTime();
-    u64 ticks13d = end13d - start13d;
-    float usec13d = (float)ticks13d / 150.0f;
-    mflops_asm_4v = ((float)asm_vec_count * vpu_batches * 28) / usec13d;
-    printf("First: [%.2f, %.2f, %.2f, %.2f]\n",
-           SPRAM_VEC_OUT[0][0], SPRAM_VEC_OUT[0][1], SPRAM_VEC_OUT[0][2], SPRAM_VEC_OUT[0][3]);
-    printf("Time: %llu ticks, Performance: %.2f MFLOPS\n\n", ticks13d, mflops_asm_4v);
-
-    // Test 13e: 8 vertices in flight (SPRAM)
-    printf("--- Test 13e: VPU ASM 8v SPRAM (%d vecs x %d batches) ---\n", asm_vec_count_8v, vpu_batches);
-    u64 start13e = GetTimerSystemTime();
-    for (int iter = 0; iter < vpu_batches; iter++) {
-        vpu_matrix_vector_multiply_asm_8v(vpu_mat, SPRAM_VEC_A, SPRAM_VEC_OUT, asm_vec_count_8v);
-    }
-    u64 end13e = GetTimerSystemTime();
-    u64 ticks13e = end13e - start13e;
-    float usec13e = (float)ticks13e / 150.0f;
-    mflops_asm_8v = ((float)asm_vec_count_8v * vpu_batches * 28) / usec13e;
-    printf("First: [%.2f, %.2f, %.2f, %.2f]\n",
-           SPRAM_VEC_OUT[0][0], SPRAM_VEC_OUT[0][1], SPRAM_VEC_OUT[0][2], SPRAM_VEC_OUT[0][3]);
-    printf("Time: %llu ticks, Performance: %.2f MFLOPS\n\n", ticks13e, mflops_asm_8v);
-
-    // Test 13f: 12 vertices in flight (maximum registers)
-    int asm_vec_count_12v = 240;  // divisible by 12
-    float mflops_asm_12v;
-    printf("--- Test 13f: VPU ASM 12v SPRAM (%d vecs x %d batches) ---\n", asm_vec_count_12v, vpu_batches);
-    u64 start13f = GetTimerSystemTime();
-    for (int iter = 0; iter < vpu_batches; iter++) {
-        vpu_matrix_vector_multiply_asm_12v(vpu_mat, SPRAM_VEC_A, SPRAM_VEC_OUT, asm_vec_count_12v);
-    }
-    u64 end13f = GetTimerSystemTime();
-    u64 ticks13f = end13f - start13f;
-    float usec13f = (float)ticks13f / 150.0f;
-    mflops_asm_12v = ((float)asm_vec_count_12v * vpu_batches * 28) / usec13f;
-    printf("First: [%.2f, %.2f, %.2f, %.2f]\n",
-           SPRAM_VEC_OUT[0][0], SPRAM_VEC_OUT[0][1], SPRAM_VEC_OUT[0][2], SPRAM_VEC_OUT[0][3]);
-    printf("Time: %llu ticks, Performance: %.2f MFLOPS\n\n", ticks13f, mflops_asm_12v);
-
-    // Test 13g: 12v with main memory (cached) - realistic scenario
-    // 4080 vectors = ~64KB input + ~64KB output, exceeds L1 (16KB) but fits L2
+    // Test 13g: the same with main memory (cached) - realistic scenario
+    // 4080 vectors = ~64KB input + ~64KB output, more than the 8KB data cache
     int main_mem_batches = 24;  // Process full array multiple times
     float mflops_main_mem;
-    printf("--- Test 13g: VPU ASM 12v MAIN MEM (%d vecs x %d batches) ---\n", MAIN_MEM_VECS, main_mem_batches);
+    printf("--- Test 13g: VPU ASM Mat x Vec MAIN MEM (%d vecs x %d batches) ---\n", MAIN_MEM_VECS, main_mem_batches);
     u64 start13g = GetTimerSystemTime();
     for (int iter = 0; iter < main_mem_batches; iter++) {
-        vpu_matrix_vector_multiply_asm_12v(vpu_mat, main_mem_vec_in, main_mem_vec_out, MAIN_MEM_VECS);
+        vpu_matrix_vector_multiply_asm(vpu_mat, main_mem_vec_in, main_mem_vec_out, MAIN_MEM_VECS);
     }
     u64 end13g = GetTimerSystemTime();
     u64 ticks13g = end13g - start13g;
@@ -567,7 +525,7 @@ int main() {
     printf("First: [%.2f, %.2f, %.2f, %.2f]\n",
            main_mem_vec_out[0][0], main_mem_vec_out[0][1], main_mem_vec_out[0][2], main_mem_vec_out[0][3]);
     printf("Time: %llu ticks, Performance: %.2f MFLOPS\n", ticks13g, mflops_main_mem);
-    printf("Cycles/vec: %.2f (vs 6.23 SPRAM)\n\n", cycles_per_vec_main);
+    printf("Cycles/vec: %.2f (6 on SPRAM)\n\n", cycles_per_vec_main);
 
     // Test 14: VPU Matrix-Vector Multiply - Compute Only (no memory in loop)
     int compute_iterations = NUM_ITERATIONS;
@@ -663,13 +621,8 @@ int main() {
     printf("  Vec MADD:       %7.2f MFLOPS\n", mflops_vpu3);
     printf("  Mat x Vec:      %7.2f MFLOPS\n", mflops_vpu4);
 #ifdef __mips_vu0
-    printf("  ASM 1v:         %7.2f MFLOPS\n", mflops_asm_1v);
-    printf("  ASM 2v:         %7.2f MFLOPS\n", mflops_asm_2v);
-    printf("  ASM 3v:         %7.2f MFLOPS\n", mflops_asm_3v);
-    printf("  ASM 4v:         %7.2f MFLOPS\n", mflops_asm_4v);
-    printf("  ASM 8v:         %7.2f MFLOPS\n", mflops_asm_8v);
-    printf("  ASM 12v:        %7.2f MFLOPS\n", mflops_asm_12v);
-    printf("  Main Mem 12v:   %7.2f MFLOPS\n", mflops_main_mem);
+    printf("  ASM Mat x Vec:  %7.2f MFLOPS\n", mflops_asm);
+    printf("  ASM Main Mem:   %7.2f MFLOPS\n", mflops_main_mem);
     printf("  Compute Only:   %7.2f MFLOPS\n", mflops_vpu7);
 #endif
     printf("  Dot Prod:       %7.2f MFLOPS\n", mflops_vpu5);

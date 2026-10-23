@@ -48,40 +48,12 @@ void vpu_hmax_hmin(v4sf * restrict a ALIGNED16,
                    int count);
 
 #ifdef __mips_vu0
+// vecs_out[i] = mat * vecs_in[i] for an even count >= 2, in VU0 macro mode
+// (vpu_tests.c).
 void vpu_matrix_vector_multiply_asm(v4sf mat[4] ALIGNED16,
-                                   v4sf * restrict vecs_in ALIGNED16,
-                                   v4sf * restrict vecs_out ALIGNED16,
-                                   int count);
-
-void vpu_matrix_vector_multiply_asm_1v(v4sf mat[4] ALIGNED16,
-                                       v4sf * restrict vecs_in ALIGNED16,
-                                       v4sf * restrict vecs_out ALIGNED16,
-                                       int count);
-
-void vpu_matrix_vector_multiply_asm_2v(v4sf mat[4] ALIGNED16,
-                                       v4sf * restrict vecs_in ALIGNED16,
-                                       v4sf * restrict vecs_out ALIGNED16,
-                                       int count);
-
-void vpu_matrix_vector_multiply_asm_3v(v4sf mat[4] ALIGNED16,
-                                       v4sf * restrict vecs_in ALIGNED16,
-                                       v4sf * restrict vecs_out ALIGNED16,
-                                       int count);
-
-void vpu_matrix_vector_multiply_asm_4v(v4sf mat[4] ALIGNED16,
-                                       v4sf * restrict vecs_in ALIGNED16,
-                                       v4sf * restrict vecs_out ALIGNED16,
-                                       int count);
-
-void vpu_matrix_vector_multiply_asm_8v(v4sf mat[4] ALIGNED16,
-                                       v4sf * restrict vecs_in ALIGNED16,
-                                       v4sf * restrict vecs_out ALIGNED16,
-                                       int count);
-
-void vpu_matrix_vector_multiply_asm_12v(v4sf mat[4] ALIGNED16,
-                                        v4sf * restrict vecs_in ALIGNED16,
-                                        v4sf * restrict vecs_out ALIGNED16,
-                                        int count);
+                                    v4sf * restrict vecs_in ALIGNED16,
+                                    v4sf * restrict vecs_out ALIGNED16,
+                                    int count);
 
 void vpu_matrix_vector_multiply_compute_only(v4sf mat[4] ALIGNED16,
                                              v4sf * restrict vec_in ALIGNED16,
