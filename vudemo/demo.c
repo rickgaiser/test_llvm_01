@@ -6,14 +6,16 @@
    MODE_BENCH: each unit alone, then all together, for timing on the PS2.
 
    All runs compute the same array, so they all have the same checksum,
-   which the host reference (ref.c) computes as EXPECTED. */
-#include <stdio.h>
-#include <string.h>
+   which the host reference (ref.c) computes as EXPECTED.
+
+   Built on maxsdk (no ps2sdk): VU1 batches go through a VIF1 queue (REF
+   tags from the data, UNPACK, MSCAL, FLUSHE), VU0 batches through COP2
+   transfers (or a VIF0 queue with VU0_DMA=1), as ps2gl/ps2stuff do. */
+#include <mx/mx.h>
 
 #include "demo.h"
 #include "expected.h"
 #include "expected_vals.h"
-#include "vu.h"
 
 typedef float f32x4 __attribute__((vector_size(16)));
 
@@ -25,114 +27,84 @@ extern const char vu0_poly[], vu0_poly_end[], vu1_poly[], vu1_poly_end[];
 static f32x4 x[N_TOTAL] __attribute__((aligned(64)));
 static float c[D + 1];
 
-/* -DVUDEMO_DEBUG=<ms>: print each step, flush, and wait <ms> before the next
-   one, so that the last line on the host shows where the PS2 stopped. */
+/* -DVUDEMO_DEBUG=<ms>: print each step and wait <ms> before the next one,
+   so that the last line on the host shows where the PS2 stopped. */
 #ifdef VUDEMO_DEBUG
 #define STEP(...)                                                              \
   do {                                                                         \
-    printf("dbg: " __VA_ARGS__);                                               \
-    printf(" (VPU-STAT %08x, VIF1_STAT %08x)\n", vpu_stat(), VIF1_STAT);      \
-    fflush(stdout);                                                            \
-    delay_ms(VUDEMO_DEBUG);                                                    \
+    mx_printf("dbg: " __VA_ARGS__);                                            \
+    mx_printf(" (VPU-STAT %08x, VIF1_STAT %08x)\n", mx_vpu_stat(),             \
+              MX_R32(MX_VIF_VIF1_STAT));                                       \
+    mx_delay_us(1000 * VUDEMO_DEBUG);                                          \
   } while (0)
 #else
 #define STEP(...) ((void)0)
 #endif
 
-/* The kernel's parameters, in the layout from poly.h: n, then the table. */
-static f32x4 head[VUK_POLY_X] __attribute__((aligned(16)));
+/* The kernels, with the data memory layout from poly.h. */
+static struct mx_kernel kern[2];
 
-static void set_params(int n) {
-  memset(head, 0, sizeof(head));
-  ((uint32_t *)&head[VUK_POLY_N])[0] = n;
-  memcpy(&head[VUK_POLY_C], c, sizeof(c));
-}
-
-/* The VIF1 packet: parameters and data of one VU1 batch, or the microcode. */
-static uint32_t vif_buf[4 * (VUK_POLY_X + N_VU1) + 64] __attribute__((aligned(64)));
-
-static void load_micro(void) {
-  int quads0 = (int)(vu0_poly_end - vu0_poly + 15) / 16;
-  vu0_load_micro(vu0_poly, quads0);
-  STEP("VU0 microcode: %d quadwords, first word %08x (want %08x)", quads0,
-       *(volatile uint32_t *)0x11000000, *(const uint32_t *)vu0_poly);
-  if (vu1_load_micro(vif_buf, vu1_poly, (int)(vu1_poly_end - vu1_poly)))
-    printf("VU1 microcode: MPG did not finish\n");
-  STEP("VU1 microcode: %d bytes by MPG", (int)(vu1_poly_end - vu1_poly));
-}
-
-static uint64_t chain_buf[2][16][2] __attribute__((aligned(64)));
+/* The kernel's parameters: the table (the count is set per batch). */
+static f32x4 head[VUK_POLY_SIZE] __attribute__((aligned(16)));
 
 /* VU0's input by VIF0 DMA (1) or through COP2 (0). Both are correct on the
-   PS2; COP2 is faster here (all three units: 36.2 vs 44.4 cycles/quadword),
-   because the VIF0 path needs SyncDCache and a DMA start per batch. */
+   PS2. With maxsdk VIF0 is faster (PS2, all three units: 31.63 vs 35.56
+   cycles/quadword; VU0 alone 45.79 vs 49.66); with the ps2sdk version COP2
+   was (36.2 vs 44.4). */
 #ifndef VU0_DMA
-#define VU0_DMA 0
+#define VU0_DMA 1
 #endif
 
-/* EE cycles per phase of the micro batches of a run: [vu][send, wait, read] */
-static uint32_t phase[2][3];
+/* VU1's results back by DMA through the scratchpad (toSPR from VU1 memory,
+   then fromSPR) instead of mapped reads: ~5.5 vs ~26 EE cycles per quadword
+   on the PS2 (maxsdk docs/vu1.md). */
+#ifndef VU1_DMA_READ
+#define VU1_DMA_READ 1
+#endif
 
-/* One micro batch: send by DMA and start; the caller does other work, then
-   finishes it. head is written by set_params and sent before it changes
-   again (the other VU's batch is sent after this DMA has read it). */
+static struct mx_vuq q[2];
+static mx_event ev[2];
+
+/* EE cycles per phase of the micro batches of a run: [vu][send, wait, read] */
+static u32 phase[2][3];
+
+static void load_micro(void) {
+  kern[0] = MX_VUK_KERNEL(POLY, 0, vu0_poly, vu0_poly_end);
+  kern[1] = MX_VUK_KERNEL(POLY, 1, vu1_poly, vu1_poly_end);
+  for (int vu = 0; vu < 2; vu++)
+    if (mx_vu_load(vu, kern[vu].code, kern[vu].code_bytes, 0) < 0)
+      mx_printf("VU%d microcode: upload failed\n", vu);
+  STEP("microcode: VU0 %u, VU1 %u bytes", kern[0].code_bytes, kern[1].code_bytes);
+}
+
+/* One micro batch: send and start; the caller does other work, then
+   finishes it. */
 static void batch_start(int vu, f32x4 *part, int n) {
-  uint32_t t0 = ee_cycles();
-  static f32x4 heads[2][VUK_POLY_X] __attribute__((aligned(64)));
-  set_params(n);
-  if (vu) {
-    memcpy(UNCACHED(&heads[vu][0]), head, sizeof(head));
-    struct vif_chain ch = {UNCACHED(&chain_buf[vu][0]), 0};
-    chain_unpack(&ch, 0, heads[vu], VUK_POLY_X, VIF_STCYCL(1, 1));
-    chain_unpack(&ch, VUK_POLY_X, part, n, VIF_NOP);
-    chain_end(&ch, VIF_MSCAL(0), VIF_FLUSHE);
-    STEP("VU1 batch of %d: chain of %d tags", n, ch.n);
-    chain_start(DMA_CHANNEL_VIF1, &ch);
-  } else if (VU0_DMA) {
-    /* The same through VIF0, but with the tags and parameters written cached
-       and then written back: with them written uncached, channel 0 did not
-       start on the PS2 (CHCR.STR read back 0, TADR did not move), while
-       VIF1 works that way and VIF0 works this way (vif0probe.c). */
-    memcpy(heads[vu], head, sizeof(head));
-    struct vif_chain ch = {chain_buf[vu], 0};
-    chain_unpack(&ch, 0, heads[vu], VUK_POLY_X, VIF_STCYCL(1, 1));
-    chain_unpack(&ch, VUK_POLY_X, part, n, VIF_NOP);
-    chain_end(&ch, VIF_MSCAL(0), VIF_FLUSHE);
-    SyncDCache(heads[vu], (char *)heads[vu] + sizeof(head) - 1);
-    SyncDCache(chain_buf[vu], (char *)(chain_buf[vu] + ch.n) - 1);
-    STEP("VU0 batch of %d: chain of %d tags", n, ch.n);
-    chain_start(DMA_CHANNEL_VIF0, &ch);
-  } else {
-    vu0_write(0, head, VUK_POLY_X);
-    vu0_write(VUK_POLY_X, part, n);
-    STEP("VU0 batch of %d: written, start", n);
-    vu0_start();
-  }
-  phase[vu][0] += ee_cycles() - t0;
-  STEP("VU%d batch: started", vu);
+  u32 t0 = mx_count();
+  ev[vu] = mx_vuq_batch(&q[vu], &kern[vu], head, part, (u32)n);
+  phase[vu][0] += mx_count() - t0;
+  STEP("VU%d batch of %d: started", vu, n);
 }
 
 static void batch_finish(int vu, f32x4 *part, int n) {
-  uint32_t t0 = ee_cycles();
-  if (!vu && !VU0_DMA)
-    vu0_wait();
-  else if (vif_wait(vu))
-    printf("VU%d did not stop within a second (VPU-STAT %08x, VIF%d_STAT %08x)\n", vu,
-           vpu_stat(), vu, vu ? VIF1_STAT : VIF0_STAT);
-  uint32_t t1 = ee_cycles();
-  STEP("VU%d batch: stopped, read results", vu);
+  u32 t0 = mx_count();
+  if (mx_vuq_wait(&q[vu], ev[vu]) < 0)
+    mx_printf("VU%d did not stop within a second (VPU-STAT %08x)\n", vu, mx_vpu_stat());
+  u32 t1 = mx_count();
   /* the results go to memory, not into the data cache */
-  if (vu)
-    vu1_read(UCAB(part), VUK_POLY_X, n);
-  else
-    vu0_read(UCAB(part), VUK_POLY_X, n);
+  mx_vuq_read(&q[vu], &kern[vu], MX_UCAB(part), (u32)n);
   phase[vu][1] += t1 - t0;
-  phase[vu][2] += ee_cycles() - t1;
-  STEP("VU%d batch: done; VU memory (mapped): n %08x, first input/result %08x; "
-       "stored %08x",
-       vu, ((volatile uint32_t *)(vu ? 0x1100c000 : 0x11004000))[4 * VUK_POLY_N],
-       ((volatile uint32_t *)(vu ? 0x1100c000 : 0x11004000))[4 * VUK_POLY_X],
-       *UNCACHED((uint32_t *)part));
+  phase[vu][2] += mx_count() - t1;
+  STEP("VU%d batch: done", vu);
+#ifdef VUDEMO_DEBUG
+  if (!vu) {
+    u32 m[8] __attribute__((aligned(16)));
+    mx_vu0_read(m, 0, 1);
+    mx_vu0_read(m + 4, VUK_POLY_X, 1);
+    mx_printf("dbg: VU0 mem: n %u, x0 %08x; part[0] %08x; VIF0_STAT %08x MARK %x\n", m[0], m[4],
+              *(u32 *)MX_UNCACHED(part), MX_R32(MX_VIF_VIF0_STAT), MX_R32(MX_VIF_VIF0_MARK));
+  }
+#endif
 }
 
 /* All quadwords on one VU, in batches that fit its data memory. */
@@ -213,53 +185,57 @@ static int32_t check_results(int verbose) {
       continue;
     if (verbose && differ < 4) {
       union { uint32_t u; float f; } w = {expected_vals[i]};
-      printf("  [%d] x=%f got %08x %f want %08x %f (%d ULP)\n", i, in[i],
-             got[i], ((const float *)x)[i], w.u, w.f, (int)d);
+      mx_printf("  [%d] x=%f got %08x %f want %08x %f (%d ULP)\n", i, in[i],
+                (unsigned)got[i], ((const float *)x)[i], (unsigned)w.u, w.f, (int)d);
     }
     differ++;
     if (d > max_ulp)
       max_ulp = d;
   }
-  printf("  %d of %d floats differ from the exact result, by at most %d ULP\n",
-         differ, 4 * N_TOTAL, (int)max_ulp);
+  mx_printf("  %d of %d floats differ from the exact result, by at most %d ULP\n", differ,
+            4 * N_TOTAL, (int)max_ulp);
   return max_ulp;
 }
 
 int main(void) {
   int failed = 0;
-  printf("vudemo: D=%d, %d quadwords (4 floats each)\n", D, N_TOTAL);
-  STEP("COP0 Status %08x (CU2 = COP2 usable: %d)", cop0_status(),
-       (cop0_status() >> 30) & 1);
-  vu_init();
-  STEP("VU0, VU1 and VIF1 reset, VIF1 DMA channel set up");
+  mx_printf("vudemo: D=%d, %d quadwords (4 floats each), maxsdk\n", D, N_TOTAL);
+  mx_dma_init();
+  mx_vu_reset(3);
   load_micro();
+  mx_vuq_init(&q[0], 0, VU0_DMA);
+  mx_vuq_init(&q[1], 1, 1);
+  if (VU1_DMA_READ)
+    mx_vuq_readback_spr(&q[1], (void *)0x70000000, 0x4000);
 
   for (unsigned r = 0; r < sizeof(runs) / sizeof(runs[0]); r++) {
     demo_init((float *)x, c);
+    memset(head, 0, sizeof(head));
+    memcpy(&head[VUK_POLY_C], c, sizeof(c));
     STEP("run %s", runs[r].name);
     memset(phase, 0, sizeof(phase));
-    uint32_t t0 = ee_cycles();
+    u32 t0 = mx_count();
     /* The VUs get x by DMA from memory: write it back once (and invalidate
        it), then no VU batch needs the data cache written back. */
-    FlushCache(0);
+    mx_dcache_flush_all();
     runs[r].run();
-    uint32_t t1 = ee_cycles();
+    u32 t1 = mx_count();
 
     uint32_t sum = demo_checksum((const float *)x, 4 * N_TOTAL);
-    printf("%s:\n", runs[r].name);
-    printf("  First: %f %f %f %f\n", x[0][0], x[0][1], x[0][2], x[0][3]);
-    printf("  Checksum: %08x (exact results: %08x)\n", sum, EXPECTED);
+    mx_printf("%s:\n", runs[r].name);
+    mx_printf("  First: %f %f %f %f\n", x[0][0], x[0][1], x[0][2], x[0][3]);
+    mx_printf("  Checksum: %08x (exact results: %08x)\n", (unsigned)sum, EXPECTED);
     int32_t ulp = check_results(sum != EXPECTED);
     failed |= ulp > MAX_ULP;
-    printf("  Result: %s\n", ulp <= MAX_ULP ? "OK" : "FAIL");
+    mx_printf("  Result: %s\n", ulp <= MAX_ULP ? "OK" : "FAIL");
     /* EE cycles; PCSX2 timings are not performance data */
-    printf("  Cycles: %u (%u.%02u per quadword)\n", t1 - t0, (t1 - t0) / N_TOTAL,
-           (t1 - t0) % N_TOTAL * 100 / N_TOTAL);
+    mx_printf("  Cycles: %u (%u.%02u per quadword)\n", t1 - t0, (t1 - t0) / N_TOTAL,
+              (t1 - t0) % N_TOTAL * 100 / N_TOTAL);
     for (int vu = 0; vu < 2; vu++)
       if (phase[vu][0] | phase[vu][1] | phase[vu][2])
-        printf("  VU%d batches: send %u, wait %u, read %u cycles\n", vu,
-               phase[vu][0], phase[vu][1], phase[vu][2]);
+        mx_printf("  VU%d batches: send %u, wait %u, read %u cycles\n", vu, phase[vu][0],
+                  phase[vu][1], phase[vu][2]);
   }
-  printf("@@PS2TEST_END@@ status=%d\n", failed);
+  MX_TEST_END(failed);
   return failed;
 }

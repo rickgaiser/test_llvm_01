@@ -8,8 +8,8 @@
    the expected product is computed with integers, so every difference is
    the hardware. Pairs: a power of two times an integer, and the products of
    the polynomial in vudemo for x = 0.5. */
+#include <mx/mx.h>
 #include <stdint.h>
-#include <stdio.h>
 
 typedef float f32x4 __attribute__((vector_size(16)));
 typedef union { float f; uint32_t u; } fu;
@@ -77,8 +77,8 @@ static void check(int64_t pm, int pe, int64_t qm, int qe, const char *what) {
   for (int k = 0; k < 6; k++)
     if (r[k] != want) {
       if (wrong < 60)
-        printf("%-9s %s p=%08x q=%08x: got %08x want %08x\n", form[k], what, p, q,
-               r[k], want);
+        mx_printf("%-9s %s p=%08x q=%08x: got %08x want %08x\n", form[k], what, (unsigned)p,
+                  (unsigned)q, (unsigned)r[k], (unsigned)want);
       wrong++;
     }
 }
@@ -89,21 +89,21 @@ int main(void) {
   for (int e = -16; e <= 4; e++)
     for (unsigned j = 0; j < sizeof(ints) / sizeof(ints[0]); j++)
       for (int sign = 1; sign >= -1; sign -= 2) {
-        snprintf(what, sizeof(what), "2^%d*%d", e, sign * ints[j]);
+        mx_snprintf(what, sizeof(what), "2^%d*%d", e, sign * ints[j]);
         check(1, e, sign * ints[j], 0, what);
       }
   /* The polynomial for x = 0.5: c * 2^-k (c in -4..4) and y * 2^-4 for the
      values y the 4-degree steps produce (multiples of 2^-12 up to 68). */
   for (int c = -4; c <= 4; c++)
     for (int k = 1; k <= 4; k++) {
-      snprintf(what, sizeof(what), "c=%d*2^-%d", c, k);
+      mx_snprintf(what, sizeof(what), "c=%d*2^-%d", c, k);
       check(c, 0, 1, -k, what);
     }
   for (int m = -68 * 4096; m <= 68 * 4096; m += 4099) {
-    snprintf(what, sizeof(what), "y=%d*2^-12*2^-4", m);
+    mx_snprintf(what, sizeof(what), "y=%d*2^-12*2^-4", m);
     check(m, -12, 1, -4, what);
   }
-  printf("mulprobe: %d products x 6 forms, %d not exact\n", tests, wrong);
-  printf("@@PS2TEST_END@@ status=%d\n", wrong != 0);
+  mx_printf("mulprobe: %d products x 6 forms, %d not exact\n", tests, wrong);
+  MX_TEST_END(wrong != 0);
   return 0;
 }
