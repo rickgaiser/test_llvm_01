@@ -12,6 +12,7 @@
 
 #include "demo.h"
 #include "expected.h"
+#include "expected_vals.h"
 #include "vu.h"
 
 typedef float f32x4 __attribute__((vector_size(16)));
@@ -24,33 +25,76 @@ extern const char vu0_poly[], vu0_poly_end[], vu1_poly[], vu1_poly_end[];
 static f32x4 x[N_TOTAL];
 static float c[D + 1];
 
+/* -DVUDEMO_DEBUG=<ms>: print each step, flush, and wait <ms> before the next
+   one, so that the last line on the host shows where the PS2 stopped. */
+#ifdef VUDEMO_DEBUG
+#define STEP(...)                                                              \
+  do {                                                                         \
+    printf("dbg: " __VA_ARGS__);                                               \
+    printf(" (VPU-STAT %08x, VIF1_STAT %08x)\n", vpu_stat(), VIF1_STAT);      \
+    fflush(stdout);                                                            \
+    delay_ms(VUDEMO_DEBUG);                                                    \
+  } while (0)
+#else
+#define STEP(...) ((void)0)
+#endif
+
 /* The kernel's parameters, in the layout from poly.h: n, then the table. */
-static void vu_params(volatile uint32_t *data, int n) {
-  f32x4 head[VUK_POLY_X] __attribute__((aligned(16)));
+static f32x4 head[VUK_POLY_X] __attribute__((aligned(16)));
+
+static void set_params(int n) {
   memset(head, 0, sizeof(head));
   ((uint32_t *)&head[VUK_POLY_N])[0] = n;
   memcpy(&head[VUK_POLY_C], c, sizeof(c));
-  vu_copy_to(data, head, VUK_POLY_X);
 }
 
-static void load_micro(volatile uint32_t *micro, const char *start, const char *end) {
-  vu_copy_to(micro, start, (int)(end - start + 15) / 16);
+/* The VIF1 packet: parameters and data of one VU1 batch, or the microcode. */
+static uint32_t vif_buf[4 * (VUK_POLY_X + N_VU1) + 64] __attribute__((aligned(64)));
+
+static void load_micro(void) {
+  int quads0 = (int)(vu0_poly_end - vu0_poly + 15) / 16;
+  vu0_load_micro(vu0_poly, quads0);
+  STEP("VU0 microcode: %d quadwords, first word %08x (want %08x)", quads0,
+       *(volatile uint32_t *)0x11000000, *(const uint32_t *)vu0_poly);
+  if (vu1_load_micro(vif_buf, vu1_poly, (int)(vu1_poly_end - vu1_poly)))
+    printf("VU1 microcode: MPG did not finish\n");
+  STEP("VU1 microcode: %d bytes by MPG", (int)(vu1_poly_end - vu1_poly));
 }
 
-/* One micro batch: copy in, start; the caller does other work; finish. */
+/* One micro batch: send, start; the caller does other work; finish. */
 static void batch_start(int vu, f32x4 *part, int n) {
-  volatile uint32_t *data = vu ? VU1_DATA : VU0_DATA;
-  vu_params(data, n);
-  vu_copy_to(data + 4 * VUK_POLY_X, part, n);
-  if (vu)
-    vu1_start();
-  else
+  set_params(n);
+  if (vu) {
+    struct vif_packet p = {vif_buf, 0};
+    vif_put(&p, VIF_STCYCL(1, 1));
+    vif_unpack(&p, 0, head, VUK_POLY_X);
+    vif_unpack(&p, VUK_POLY_X, part, n);
+    vif_put(&p, VIF_MSCAL(0));
+    vif_put(&p, VIF_FLUSHE);
+    STEP("VU1 batch of %d: send %d quadwords", n, (p.n + 3) / 4);
+    vif_send(&p);
+  } else {
+    vu0_write(0, head, VUK_POLY_X);
+    vu0_write(VUK_POLY_X, part, n);
+    STEP("VU0 batch of %d: written, start", n);
     vu0_start();
+  }
+  STEP("VU%d batch: started", vu);
 }
 
 static void batch_finish(int vu, f32x4 *part, int n) {
-  vu_wait(vu ? VPU_STAT_VBS1 : VPU_STAT_VBS0);
-  vu_copy_from(part, (vu ? VU1_DATA : VU0_DATA) + 4 * VUK_POLY_X, n);
+  if (vu) {
+    if (vif_wait())
+      printf("VU1 did not stop within a second (VPU-STAT %08x, VIF1_STAT %08x)\n",
+             vpu_stat(), VIF1_STAT);
+    STEP("VU1 batch: stopped, read results");
+    vu1_read(part, VUK_POLY_X, n);
+  } else {
+    vu0_wait();
+    STEP("VU0 batch: stopped, read results");
+    vu0_read(part, VUK_POLY_X, n);
+  }
+  STEP("VU%d batch: done", vu);
 }
 
 /* All quadwords on one VU, in batches that fit its data memory. */
@@ -105,24 +149,69 @@ static const struct {
 #endif
 };
 
+/* The R5900 multiplier is not commutative: with a power of two as the first
+   operand (fs) and low mantissa bits in the second, the product is 1 ULP low
+   (mulprobe.c, measured on the PS2). The compiler chooses the operand order,
+   so the results are compared within MAX_ULP of the exact ones, not bit for
+   bit. */
+#define MAX_ULP 4
+
+/* Floats as integers in the order of their values, for ULP distances. */
+static int32_t ordered(uint32_t u) {
+  return u & 0x80000000u ? -(int32_t)(u & 0x7fffffffu) : (int32_t)u;
+}
+
+/* Returns the largest distance in ULP from the exact results, and prints the
+   first results that differ, with their inputs (demo_init gives them). */
+static int32_t check_results(int verbose) {
+  static float in[4 * N_TOTAL], cc[D + 1];
+  const uint32_t *got = (const uint32_t *)x;
+  int32_t max_ulp = 0;
+  int differ = 0;
+  demo_init(in, cc);
+  for (int i = 0; i < 4 * N_TOTAL; i++) {
+    int32_t d = ordered(got[i]) - ordered(expected_vals[i]);
+    if (d < 0)
+      d = -d;
+    if (d == 0)
+      continue;
+    if (verbose && differ < 4) {
+      union { uint32_t u; float f; } w = {expected_vals[i]};
+      printf("  [%d] x=%f got %08x %f want %08x %f (%d ULP)\n", i, in[i],
+             got[i], ((const float *)x)[i], w.u, w.f, (int)d);
+    }
+    differ++;
+    if (d > max_ulp)
+      max_ulp = d;
+  }
+  printf("  %d of %d floats differ from the exact result, by at most %d ULP\n",
+         differ, 4 * N_TOTAL, (int)max_ulp);
+  return max_ulp;
+}
+
 int main(void) {
   int failed = 0;
-  load_micro(VU0_MICRO, vu0_poly, vu0_poly_end);
-  load_micro(VU1_MICRO, vu1_poly, vu1_poly_end);
   printf("vudemo: D=%d, %d quadwords (4 floats each)\n", D, N_TOTAL);
+  STEP("COP0 Status %08x (CU2 = COP2 usable: %d)", cop0_status(),
+       (cop0_status() >> 30) & 1);
+  vu_init();
+  STEP("VU0, VU1 and VIF1 reset, VIF1 DMA channel set up");
+  load_micro();
 
   for (unsigned r = 0; r < sizeof(runs) / sizeof(runs[0]); r++) {
     demo_init((float *)x, c);
+    STEP("run %s", runs[r].name);
     uint32_t t0 = ee_cycles();
     runs[r].run();
     uint32_t t1 = ee_cycles();
 
     uint32_t sum = demo_checksum((const float *)x, 4 * N_TOTAL);
-    failed |= sum != EXPECTED;
     printf("%s:\n", runs[r].name);
     printf("  First: %f %f %f %f\n", x[0][0], x[0][1], x[0][2], x[0][3]);
-    printf("  Result: %08x (expected %08x) %s\n", sum, EXPECTED,
-           sum == EXPECTED ? "OK" : "FAIL");
+    printf("  Checksum: %08x (exact results: %08x)\n", sum, EXPECTED);
+    int32_t ulp = check_results(sum != EXPECTED);
+    failed |= ulp > MAX_ULP;
+    printf("  Result: %s\n", ulp <= MAX_ULP ? "OK" : "FAIL");
     /* EE cycles; PCSX2 timings are not performance data */
     printf("  Cycles: %u (%u.%02u per quadword)\n", t1 - t0, (t1 - t0) / N_TOTAL,
            (t1 - t0) % N_TOTAL * 100 / N_TOTAL);

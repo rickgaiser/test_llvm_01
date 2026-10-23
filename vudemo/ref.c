@@ -1,4 +1,5 @@
-/* Host reference: prints the expected checksum as a C define. It also checks
+/* Host reference: prints the expected checksum as a C define, and with -v
+   the expected values as a table, for finding mismatches. It also checks
    that the inputs keep every result exact: Horner's method in float, step by
    step, must give the same result as in double. */
 #include <stdio.h>
@@ -7,7 +8,7 @@
 
 static float x[4 * N_TOTAL], c[D + 1];
 
-int main(void) {
+int main(int argc, char **argv) {
   demo_init(x, c);
   for (int i = 0; i < 4 * N_TOTAL; i++) {
     double y = c[D];
@@ -22,6 +23,15 @@ int main(void) {
       }
     }
     x[i] = (float)y;
+  }
+  if (argc > 1) {
+    printf("static const uint32_t expected_vals[4 * N_TOTAL] = {\n");
+    for (int i = 0; i < 4 * N_TOTAL; i++) {
+      union { float f; uint32_t u; } v = {x[i]};
+      printf("0x%08x,%s", v.u, i % 8 == 7 ? "\n" : " ");
+    }
+    printf("};\n");
+    return 0;
   }
   printf("#define EXPECTED 0x%08xu\n", demo_checksum(x, 4 * N_TOTAL));
   return 0;

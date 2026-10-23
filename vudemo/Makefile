@@ -32,10 +32,10 @@ FPU_CFLAGS = $(KERNEL_CFLAGS) -fno-vectorize -fno-slp-vectorize
 LDFLAGS = -T$(PS2SDK)/ee/startup/linkfile -L$(PS2SDK)/ee/lib -Wl,-zmax-page-size=128
 LLCFLAGS = -mtriple=vu -O3
 
-MODES = macro micro all bench
+MODES = macro micro all bench debug
 ELFS  = $(MODES:%=$(OUT)/vudemo_%.elf)
 
-all: $(ELFS) $(OUT)/vu0_poly.s $(OUT)/vu1_poly.s
+all: $(ELFS) $(OUT)/mulprobe.elf $(OUT)/vu0_poly.s $(OUT)/vu1_poly.s
 
 $(OUT):
 	mkdir -p $@
@@ -62,6 +62,7 @@ $(OUT)/blobs.S: $(OUT)/vu0_poly.bin $(OUT)/vu1_poly.bin
 $(OUT)/expected.h: $(HERE)/ref.c $(HERE)/demo.h $(OUT)/poly.h
 	cc -O2 -I$(OUT) -I$(HERE) $< -o $(OUT)/ref
 	$(OUT)/ref > $@
+	$(OUT)/ref -v > $(OUT)/expected_vals.h
 
 $(OUT)/blobs.o: $(OUT)/blobs.S
 	$(CLANG) $(CFLAGS) -c $< -o $@
@@ -77,8 +78,19 @@ $(OUT)/macro.o: $(HERE)/macro.c $(HERE)/demo.h $(OUT)/poly.h
 $(OUT)/demo_%.o: $(HERE)/demo.c $(HERE)/demo.h $(HERE)/vu.h $(OUT)/poly.h $(OUT)/expected.h
 	$(CLANG) $(CFLAGS) -DMODE_$(shell echo $* | tr a-z A-Z) -c $< -o $@
 
+# The bench run with every step printed, and 200 ms between steps.
+$(OUT)/demo_debug.o: $(HERE)/demo.c $(HERE)/demo.h $(HERE)/vu.h $(OUT)/poly.h $(OUT)/expected.h
+	$(CLANG) $(CFLAGS) -DMODE_BENCH -DVUDEMO_DEBUG=200 -c $< -o $@
+
 $(OUT)/vudemo_%.elf: $(OUT)/demo_%.o $(OUT)/fpu.o $(OUT)/macro.o $(OUT)/blobs.o
-	$(EE_GCC) -o $@ $^ $(LDFLAGS)
+	$(EE_GCC) -o $@ $^ $(LDFLAGS) -ldma
+
+# Hardware check: is the multiplier exact in both operand orders?
+$(OUT)/mulprobe.o: $(HERE)/mulprobe.c | $(OUT)
+	$(CLANG) $(CFLAGS) -O1 -fno-fast-math -mvu0 -c $< -o $@
+
+$(OUT)/mulprobe.elf: $(OUT)/mulprobe.o
+	$(EE_GCC) -o $@ $^ $(LDFLAGS) -ldma
 
 clean:
 	rm -rf $(OUT)
