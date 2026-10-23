@@ -8,16 +8,23 @@
 
 #define D VUK_D
 
-/* Work: N_TOTAL quadwords (4 floats each), split over the units in demo_all. */
-#define N_VU1     960                  /* VU1 data memory: 1024 quadwords */
-#define N_VU0     240                  /* one VU0 batch; VU0 data memory: 256 quadwords */
-#define VU0_BATCHES 4
-/* FPU quadwords per VU0 batch, so that the FPU and VU0 take about as long:
-   static cycles per quadword (llc, issue model) are 25 on a VU and 166 on
-   the FPU (41.5 per float), so 240 * 25 / 166 = 36. */
-#define N_FPU_BATCH 36
-#define N_FPU     (VU0_BATCHES * N_FPU_BATCH)
-#define N_TOTAL   (N_VU1 + VU0_BATCHES * N_VU0 + N_FPU)
+/* Work: N_TOTAL quadwords (4 floats each).
+
+   demo_all works in rounds. The EE writes one VU0 batch (through COP2) and
+   starts VU0; while VU0 computes, the EE reads back VU1's previous batch,
+   sends VU1 the next one by DMA and runs the FPU on a few quadwords; then it
+   reads VU0's results. The EE is the limit, not the VUs. Measured on the PS2,
+   per quadword: a VU computes it in 25 cycles; the EE spends 17 writing and
+   8.5 reading VU0's, 32 reading VU1's, and 174 on the FPU. So VU1 gets what
+   the EE serves while VU0 computes (180 * 32 ~ 240 * 25), the FPU a token
+   share: about 28 cycles per quadword in all, against 49 for VU0 alone. */
+#define N_VU1     960                  /* VU1 batch alone; VU1 data memory: 1024 quadwords */
+#define N_VU0     240                  /* VU0 batch; VU0 data memory: 256 quadwords */
+#define ROUNDS    6
+#define N_VU1_ROUND 180                /* VU1 quadwords per round */
+#define N_FPU_ROUND 4                  /* FPU quadwords per round */
+#define N_ROUND   (N_VU0 + N_VU1_ROUND + N_FPU_ROUND)
+#define N_TOTAL   (ROUNDS * N_ROUND)
 
 #if VUK_POLY_X + N_VU1 > 1024 || VUK_POLY_X + N_VU0 > 256
 #error "batch does not fit in VU data memory"

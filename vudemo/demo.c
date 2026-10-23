@@ -22,7 +22,7 @@ void poly_vu0_macro(f32x4 *x, const float *c, int n);
 
 extern const char vu0_poly[], vu0_poly_end[], vu1_poly[], vu1_poly_end[];
 
-static f32x4 x[N_TOTAL];
+static f32x4 x[N_TOTAL] __attribute__((aligned(64)));
 static float c[D + 1];
 
 /* -DVUDEMO_DEBUG=<ms>: print each step, flush, and wait <ms> before the next
@@ -61,40 +61,56 @@ static void load_micro(void) {
   STEP("VU1 microcode: %d bytes by MPG", (int)(vu1_poly_end - vu1_poly));
 }
 
-/* One micro batch: send, start; the caller does other work; finish. */
+static uint64_t chain_buf[2][16][2] __attribute__((aligned(64)));
+
+/* EE cycles per phase of the micro batches of a run: [vu][send, wait, read] */
+static uint32_t phase[2][3];
+
+/* One micro batch: send by DMA and start; the caller does other work, then
+   finishes it. head is written by set_params and sent before it changes
+   again (the other VU's batch is sent after this DMA has read it). */
 static void batch_start(int vu, f32x4 *part, int n) {
+  uint32_t t0 = ee_cycles();
+  static f32x4 heads[2][VUK_POLY_X] __attribute__((aligned(64)));
   set_params(n);
   if (vu) {
-    struct vif_packet p = {vif_buf, 0};
-    vif_put(&p, VIF_STCYCL(1, 1));
-    vif_unpack(&p, 0, head, VUK_POLY_X);
-    vif_unpack(&p, VUK_POLY_X, part, n);
-    vif_put(&p, VIF_MSCAL(0));
-    vif_put(&p, VIF_FLUSHE);
-    STEP("VU1 batch of %d: send %d quadwords", n, (p.n + 3) / 4);
-    vif_send(&p);
+    memcpy(UNCACHED(&heads[vu][0]), head, sizeof(head));
+    struct vif_chain ch = {UNCACHED(&chain_buf[vu][0]), 0};
+    chain_unpack(&ch, 0, heads[vu], VUK_POLY_X, VIF_STCYCL(1, 1));
+    chain_unpack(&ch, VUK_POLY_X, part, n, VIF_NOP);
+    STEP("VU1 batch of %d: chain of %d tags", n, ch.n + 1);
+    chain_send(DMA_CHANNEL_VIF1, &ch, VIF_MSCAL(0), VIF_FLUSHE);
   } else {
     vu0_write(0, head, VUK_POLY_X);
     vu0_write(VUK_POLY_X, part, n);
     STEP("VU0 batch of %d: written, start", n);
     vu0_start();
   }
+  phase[vu][0] += ee_cycles() - t0;
   STEP("VU%d batch: started", vu);
 }
 
 static void batch_finish(int vu, f32x4 *part, int n) {
-  if (vu) {
-    if (vif_wait())
-      printf("VU1 did not stop within a second (VPU-STAT %08x, VIF1_STAT %08x)\n",
-             vpu_stat(), VIF1_STAT);
-    STEP("VU1 batch: stopped, read results");
-    vu1_read(part, VUK_POLY_X, n);
-  } else {
+  uint32_t t0 = ee_cycles();
+  if (!vu)
     vu0_wait();
-    STEP("VU0 batch: stopped, read results");
-    vu0_read(part, VUK_POLY_X, n);
-  }
-  STEP("VU%d batch: done", vu);
+  else if (vif_wait(1))
+    printf("VU1 did not stop within a second (VPU-STAT %08x, VIF1_STAT %08x)\n",
+           vpu_stat(), VIF1_STAT);
+  uint32_t t1 = ee_cycles();
+  STEP("VU%d batch: stopped, read results", vu);
+  /* the results go to memory, not into the data cache */
+  if (vu)
+    vu1_read(UCAB(part), VUK_POLY_X, n);
+  else
+    vu0_read(UCAB(part), VUK_POLY_X, n);
+  phase[vu][1] += t1 - t0;
+  phase[vu][2] += ee_cycles() - t1;
+  STEP("VU%d batch: done; VU memory (mapped): n %08x, first input/result %08x; "
+       "stored %08x",
+       vu, ((volatile uint32_t *)(vu ? 0x1100c000 : 0x11004000))[4 * VUK_POLY_N],
+       ((volatile uint32_t *)(vu ? 0x1100c000 : 0x11004000))[4 * VUK_POLY_X],
+       *UNCACHED((uint32_t *)part));
 }
 
 /* All quadwords on one VU, in batches that fit its data memory. */
@@ -113,21 +129,19 @@ static __attribute__((unused)) void run_macro(void) { poly_vu0_macro(x, c, N_TOT
 static __attribute__((unused)) void run_micro(void) { run_micro_on(0); }
 
 static __attribute__((unused)) void run_all(void) {
-  f32x4 *vu1_part = x;
-  f32x4 *vu0_part = x + N_VU1;
-  f32x4 *fpu_part = vu0_part + VU0_BATCHES * N_VU0;
+  for (int r = 0; r < ROUNDS; r++) {
+    f32x4 *vu0_part = x + r * N_ROUND;
+    f32x4 *vu1_part = vu0_part + N_VU0;
+    f32x4 *fpu_part = vu1_part + N_VU1_ROUND;
 
-  /* VU1 gets one large batch and runs for the whole time. */
-  batch_start(1, vu1_part, N_VU1);
-
-  /* The EE keeps VU0 busy with batches and runs the FPU in between. */
-  for (int b = 0; b < VU0_BATCHES; b++) {
-    batch_start(0, vu0_part + b * N_VU0, N_VU0);
-    poly_fpu((float *)(fpu_part + b * N_FPU_BATCH), c, 4 * N_FPU_BATCH);
-    batch_finish(0, vu0_part + b * N_VU0, N_VU0);
+    batch_start(0, vu0_part, N_VU0);
+    if (r > 0)
+      batch_finish(1, vu1_part - N_ROUND, N_VU1_ROUND);
+    batch_start(1, vu1_part, N_VU1_ROUND);
+    poly_fpu((float *)fpu_part, c, 4 * N_FPU_ROUND);
+    batch_finish(0, vu0_part, N_VU0);
   }
-
-  batch_finish(1, vu1_part, N_VU1);
+  batch_finish(1, x + (ROUNDS - 1) * N_ROUND + N_VU0, N_VU1_ROUND);
 }
 
 static const struct {
@@ -201,7 +215,11 @@ int main(void) {
   for (unsigned r = 0; r < sizeof(runs) / sizeof(runs[0]); r++) {
     demo_init((float *)x, c);
     STEP("run %s", runs[r].name);
+    memset(phase, 0, sizeof(phase));
     uint32_t t0 = ee_cycles();
+    /* The VUs get x by DMA from memory: write it back once (and invalidate
+       it), then no VU batch needs the data cache written back. */
+    FlushCache(0);
     runs[r].run();
     uint32_t t1 = ee_cycles();
 
@@ -215,6 +233,10 @@ int main(void) {
     /* EE cycles; PCSX2 timings are not performance data */
     printf("  Cycles: %u (%u.%02u per quadword)\n", t1 - t0, (t1 - t0) / N_TOTAL,
            (t1 - t0) % N_TOTAL * 100 / N_TOTAL);
+    for (int vu = 0; vu < 2; vu++)
+      if (phase[vu][0] | phase[vu][1] | phase[vu][2])
+        printf("  VU%d batches: send %u, wait %u, read %u cycles\n", vu,
+               phase[vu][0], phase[vu][1], phase[vu][2]);
   }
   printf("@@PS2TEST_END@@ status=%d\n", failed);
   return failed;
