@@ -1309,6 +1309,12 @@ KERNEL_RAW(k_mxv_new, MXV_SETUP, MXV_LOOP_NEW)
     }
 KERNEL_RAW64(k_mxv_old_a64, MXV_SETUP, MXV_LOOP_OLD)
 KERNEL_RAW64(k_mxv_new_a64, MXV_SETUP, MXV_LOOP_NEW)
+// As main.c lays out a SPRAM bank: the output at p, the input after it.
+#define MXV_SETUP_BANK                                                 \
+    "addiu $4, %2, 2080\n" "move $2, %2\n" "sll $3, %3, 2\n"            \
+    "addiu $3, $3, 4\n"
+KERNEL_RAW64(k_mxv_old_bank, MXV_SETUP_BANK, MXV_LOOP_OLD)
+KERNEL_RAW64(k_mxv_new_bank, MXV_SETUP_BANK, MXV_LOOP_NEW)
 
 // Walking loads and stores: $4 walks the input and $2 the output (in +
 // 4096) by 64 bytes per iteration, $6 and $5 stay at their start.
@@ -1356,7 +1362,12 @@ KERNEL_RAW64(k_walk_s_vnop_l, WALK_SETUP,
              SQC2_W2_2 VNOP4 LQC2_W4_2 SQC2_W2_3 VNOP4 LQC2_W4_3 WALK_END)
 
 // A load d bytes after (before for m) the store before it, 4 times per
-// iteration, at fixed addresses: $5 = p + 4096.
+// iteration, at fixed addresses: $5 = p + 4096. On SPRAM, a load after a
+// store costs 2 cycles more if it is in another 4KB block (bank) than the
+// byte after the store (store address + 16), also when they are far apart
+// (16 vnops); otherwise it costs nothing. So a store to the last quadword of
+// a block makes the next load in that block pay (the "top" kernels below).
+// The data cache has no such cost.
 #define LQC2_D16 W(0xd8a70010) // lqc2 $vf7, 16($5)
 #define LQC2_D64 W(0xd8a70040) // lqc2 $vf7, 64($5)
 #define LQC2_D128 W(0xd8a70080) // lqc2 $vf7, 128($5)
@@ -1405,6 +1416,237 @@ KERNEL_RAW64(k_sl_dm1024, WALK_SETUP,
 KERNEL_RAW64(k_sl_dm4096, WALK_SETUP,
              SQC2_W5_0 LQC2_Dm4096 SQC2_W5_0 LQC2_Dm4096 SQC2_W5_0 LQC2_Dm4096
              SQC2_W5_0 LQC2_Dm4096 VNOP16 WALK_END)
+
+// The store at the top of a 4KB block ($7 = p + 4096 + 4080), the loads d
+// bytes below it in the same block.
+#define WALK_SETUP_TOP WALK_SETUP "addiu $7, %2, 8176\n"
+#define SQC2_TOP W(0xf8e30000) // sqc2 $vf3, 0($7)
+#define LQC2_T16 W(0xd8e7fff0) // lqc2 $vf7, -16($7)
+#define LQC2_T64 W(0xd8e7ffc0) // lqc2 $vf7, -64($7)
+#define LQC2_T256 W(0xd8e7ff00) // lqc2 $vf7, -256($7)
+#define LQC2_T512 W(0xd8e7fe00) // lqc2 $vf7, -512($7)
+#define LQC2_T1024 W(0xd8e7fc00) // lqc2 $vf7, -1024($7)
+#define LQC2_T2048 W(0xd8e7f800) // lqc2 $vf7, -2048($7)
+#define LQC2_T3072 W(0xd8e7f400) // lqc2 $vf7, -3072($7)
+KERNEL_RAW64(k_sl_t16, WALK_SETUP_TOP,
+             SQC2_TOP LQC2_T16 SQC2_TOP LQC2_T16 SQC2_TOP LQC2_T16
+             SQC2_TOP LQC2_T16 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_t64, WALK_SETUP_TOP,
+             SQC2_TOP LQC2_T64 SQC2_TOP LQC2_T64 SQC2_TOP LQC2_T64
+             SQC2_TOP LQC2_T64 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_t256, WALK_SETUP_TOP,
+             SQC2_TOP LQC2_T256 SQC2_TOP LQC2_T256 SQC2_TOP LQC2_T256
+             SQC2_TOP LQC2_T256 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_t512, WALK_SETUP_TOP,
+             SQC2_TOP LQC2_T512 SQC2_TOP LQC2_T512 SQC2_TOP LQC2_T512
+             SQC2_TOP LQC2_T512 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_t1024, WALK_SETUP_TOP,
+             SQC2_TOP LQC2_T1024 SQC2_TOP LQC2_T1024 SQC2_TOP LQC2_T1024
+             SQC2_TOP LQC2_T1024 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_t2048, WALK_SETUP_TOP,
+             SQC2_TOP LQC2_T2048 SQC2_TOP LQC2_T2048 SQC2_TOP LQC2_T2048
+             SQC2_TOP LQC2_T2048 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_t3072, WALK_SETUP_TOP,
+             SQC2_TOP LQC2_T3072 SQC2_TOP LQC2_T3072 SQC2_TOP LQC2_T3072
+             SQC2_TOP LQC2_T3072 VNOP16 WALK_END)
+
+// The pattern of the sqc2|lqc2 kernel (store at +32, load at +0, and the
+// reverse) at several offsets from p: $7 = p + offset.
+#define SQC2_B32 W(0xf8e30020) // sqc2 $vf3, 32($7)
+#define LQC2_B0 W(0xd8e70000) // lqc2 $vf7, 0($7)
+#define SQC2_B0 W(0xf8e30000) // sqc2 $vf3, 0($7)
+#define LQC2_B32 W(0xd8e70020) // lqc2 $vf7, 32($7)
+KERNEL_RAW64(k_sl_below_4096, WALK_SETUP "addiu $7, %2, 4096\n",
+             SQC2_B32 LQC2_B0 SQC2_B32 LQC2_B0 SQC2_B32 LQC2_B0 SQC2_B32 LQC2_B0 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_above_4096, WALK_SETUP "addiu $7, %2, 4096\n",
+             SQC2_B0 LQC2_B32 SQC2_B0 LQC2_B32 SQC2_B0 LQC2_B32 SQC2_B0 LQC2_B32 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_below_6144, WALK_SETUP "addiu $7, %2, 6144\n",
+             SQC2_B32 LQC2_B0 SQC2_B32 LQC2_B0 SQC2_B32 LQC2_B0 SQC2_B32 LQC2_B0 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_above_6144, WALK_SETUP "addiu $7, %2, 6144\n",
+             SQC2_B0 LQC2_B32 SQC2_B0 LQC2_B32 SQC2_B0 LQC2_B32 SQC2_B0 LQC2_B32 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_below_8128, WALK_SETUP "addiu $7, %2, 8128\n",
+             SQC2_B32 LQC2_B0 SQC2_B32 LQC2_B0 SQC2_B32 LQC2_B0 SQC2_B32 LQC2_B0 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_above_8128, WALK_SETUP "addiu $7, %2, 8128\n",
+             SQC2_B0 LQC2_B32 SQC2_B0 LQC2_B32 SQC2_B0 LQC2_B32 SQC2_B0 LQC2_B32 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_below_16128, WALK_SETUP "addiu $7, %2, 16128\n",
+             SQC2_B32 LQC2_B0 SQC2_B32 LQC2_B0 SQC2_B32 LQC2_B0 SQC2_B32 LQC2_B0 VNOP16 WALK_END)
+KERNEL_RAW64(k_sl_above_16128, WALK_SETUP "addiu $7, %2, 16128\n",
+             SQC2_B0 LQC2_B32 SQC2_B0 LQC2_B32 SQC2_B0 LQC2_B32 SQC2_B0 LQC2_B32 VNOP16 WALK_END)
+
+// Walking stores and loads with the input D bytes from the output: $2 walks
+// the output from p + 4096, $4 the input from p + 4096 + D.
+#define WALK_SETUP_D(d)                                                \
+    "addiu $2, %2, 4096\n" "addiu $4, %2, 4096 + " #d "\n"               \
+    "move $3, %3\n"
+#define SLSL_W                                                         \
+    SQC2_W2_0 LQC2_W4_0 SQC2_W2_1 LQC2_W4_1 SQC2_W2_2 LQC2_W4_2          \
+    SQC2_W2_3 LQC2_W4_3
+KERNEL_RAW64(k_slsl_d64, WALK_SETUP_D(64), SLSL_W VNOP16 WALK_END)
+KERNEL_RAW64(k_s4l4_d64, WALK_SETUP_D(64), S_W L_W VNOP16 WALK_END)
+KERNEL_RAW64(k_slsl_d256, WALK_SETUP_D(256), SLSL_W VNOP16 WALK_END)
+KERNEL_RAW64(k_s4l4_d256, WALK_SETUP_D(256), S_W L_W VNOP16 WALK_END)
+KERNEL_RAW64(k_slsl_d1024, WALK_SETUP_D(1024), SLSL_W VNOP16 WALK_END)
+KERNEL_RAW64(k_s4l4_d1024, WALK_SETUP_D(1024), S_W L_W VNOP16 WALK_END)
+KERNEL_RAW64(k_slsl_d2048, WALK_SETUP_D(2048), SLSL_W VNOP16 WALK_END)
+KERNEL_RAW64(k_s4l4_d2048, WALK_SETUP_D(2048), S_W L_W VNOP16 WALK_END)
+KERNEL_RAW64(k_slsl_d2080, WALK_SETUP_D(2080), SLSL_W VNOP16 WALK_END)
+KERNEL_RAW64(k_s4l4_d2080, WALK_SETUP_D(2080), S_W L_W VNOP16 WALK_END)
+KERNEL_RAW64(k_slsl_d3072, WALK_SETUP_D(3072), SLSL_W VNOP16 WALK_END)
+KERNEL_RAW64(k_s4l4_d3072, WALK_SETUP_D(3072), S_W L_W VNOP16 WALK_END)
+KERNEL_RAW64(k_slsl_dm64, WALK_SETUP_D(-64), SLSL_W VNOP16 WALK_END)
+KERNEL_RAW64(k_s4l4_dm64, WALK_SETUP_D(-64), S_W L_W VNOP16 WALK_END)
+KERNEL_RAW64(k_slsl_dm2048, WALK_SETUP_D(-2048), SLSL_W VNOP16 WALK_END)
+KERNEL_RAW64(k_s4l4_dm2048, WALK_SETUP_D(-2048), S_W L_W VNOP16 WALK_END)
+KERNEL_RAW64(k_slsl_dm4096, WALK_SETUP_D(-4096), SLSL_W VNOP16 WALK_END)
+KERNEL_RAW64(k_s4l4_dm4096, WALK_SETUP_D(-4096), S_W L_W VNOP16 WALK_END)
+
+// The main.c bank layout (output, then input) in each 4KB block b.
+#define MXV_SETUP_BANK_B(b)                                            \
+    "addiu $4, %2, " #b " * 4096 + 2080\n" "addiu $2, %2, " #b " * 4096\n" \
+    "sll $3, %3, 2\n" "addiu $3, $3, 4\n"
+#define WALK_SETUP_BANK_B(b)                                           \
+    "addiu $2, %2, " #b " * 4096\n" "addiu $4, %2, " #b " * 4096 + 2048\n" \
+    "move $3, %3\n"
+KERNEL_RAW64(k_mxv_old_b0, MXV_SETUP_BANK_B(0), MXV_LOOP_OLD)
+KERNEL_RAW64(k_mxv_new_b0, MXV_SETUP_BANK_B(0), MXV_LOOP_NEW)
+KERNEL_RAW64(k_slsl_b0, WALK_SETUP_BANK_B(0), SLSL_W VNOP16 WALK_END)
+KERNEL_RAW64(k_mxv_old_b1, MXV_SETUP_BANK_B(1), MXV_LOOP_OLD)
+KERNEL_RAW64(k_mxv_new_b1, MXV_SETUP_BANK_B(1), MXV_LOOP_NEW)
+KERNEL_RAW64(k_slsl_b1, WALK_SETUP_BANK_B(1), SLSL_W VNOP16 WALK_END)
+KERNEL_RAW64(k_mxv_old_b2, MXV_SETUP_BANK_B(2), MXV_LOOP_OLD)
+KERNEL_RAW64(k_mxv_new_b2, MXV_SETUP_BANK_B(2), MXV_LOOP_NEW)
+KERNEL_RAW64(k_slsl_b2, WALK_SETUP_BANK_B(2), SLSL_W VNOP16 WALK_END)
+KERNEL_RAW64(k_mxv_old_b3, MXV_SETUP_BANK_B(3), MXV_LOOP_OLD)
+KERNEL_RAW64(k_mxv_new_b3, MXV_SETUP_BANK_B(3), MXV_LOOP_NEW)
+KERNEL_RAW64(k_slsl_b3, WALK_SETUP_BANK_B(3), SLSL_W VNOP16 WALK_END)
+
+// The Mat x Vec loops with the VU0 operations replaced by vnop (only the
+// loads and stores left), and with the stores of $vf12 (not written in the
+// loop) instead of the results, in the bank layout of block 1.
+#define MXV_LOOP_OLD_VNOP \
+    W(0x4a0002ff) /* vnop */ \
+    "addiu $3, $3, -4\n" \
+    W(0x4a0002ff) /* vnop */ \
+    "slti $1, $3, 5\n" \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0xd88affe0) /* lqc2 $vf10, -32($4) */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0xd889fff0) /* lqc2 $vf9, -16($4) */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0xf8450000) /* sqc2 $vf5, 0($2) */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0xf8470010) /* sqc2 $vf7, 16($2) */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0xf8480020) /* sqc2 $vf8, 32($2) */ \
+    W(0xd8880000) /* lqc2 $vf8, 0($4) */ \
+    W(0xd8860010) /* lqc2 $vf6, 16($4) */ \
+    "addiu $4, $4, 64\n" \
+    W(0xf84b0030) /* sqc2 $vf11, 48($2) */ \
+    "beqz $1, 2b\n" \
+    "addiu $2, $2, 64\n"
+#define MXV_LOOP_OLD_SQ12 \
+    W(0x4be821bc) /* vmulax.xyzw $acc, $vf4, $vf8 */ \
+    "addiu $3, $3, -4\n" \
+    W(0x4be818bd) /* vmadday.xyzw $acc, $vf3, $vf8 */ \
+    "slti $1, $3, 5\n" \
+    W(0x4be810be) /* vmaddaz.xyzw $acc, $vf2, $vf8 */ \
+    W(0x4be80a0b) /* vmaddw.xyzw $vf8, $vf1, $vf8 */ \
+    W(0x4be621bc) /* vmulax.xyzw $acc, $vf4, $vf6 */ \
+    W(0xd88affe0) /* lqc2 $vf10, -32($4) */ \
+    W(0x4be618bd) /* vmadday.xyzw $acc, $vf3, $vf6 */ \
+    W(0x4be610be) /* vmaddaz.xyzw $acc, $vf2, $vf6 */ \
+    W(0x4be60acb) /* vmaddw.xyzw $vf11, $vf1, $vf6 */ \
+    W(0x4bea21bc) /* vmulax.xyzw $acc, $vf4, $vf10 */ \
+    W(0xd889fff0) /* lqc2 $vf9, -16($4) */ \
+    W(0x4bea18bd) /* vmadday.xyzw $acc, $vf3, $vf10 */ \
+    W(0x4bea10be) /* vmaddaz.xyzw $acc, $vf2, $vf10 */ \
+    W(0xf84c0000) /* sqc2 $vf12, 0($2) */ \
+    W(0x4bea094b) /* vmaddw.xyzw $vf5, $vf1, $vf10 */ \
+    W(0x4be921bc) /* vmulax.xyzw $acc, $vf4, $vf9 */ \
+    W(0x4be918bd) /* vmadday.xyzw $acc, $vf3, $vf9 */ \
+    W(0x4be910be) /* vmaddaz.xyzw $acc, $vf2, $vf9 */ \
+    W(0xf84c0010) /* sqc2 $vf12, 16($2) */ \
+    W(0x4be909cb) /* vmaddw.xyzw $vf7, $vf1, $vf9 */ \
+    W(0xf84c0020) /* sqc2 $vf12, 32($2) */ \
+    W(0xd8880000) /* lqc2 $vf8, 0($4) */ \
+    W(0xd8860010) /* lqc2 $vf6, 16($4) */ \
+    "addiu $4, $4, 64\n" \
+    W(0xf84c0030) /* sqc2 $vf12, 48($2) */ \
+    "beqz $1, 2b\n" \
+    "addiu $2, $2, 64\n"
+#define MXV_LOOP_NEW_VNOP \
+    W(0x4a0002ff) /* vnop */ \
+    "addiu $3, $3, -4\n" \
+    W(0x4a0002ff) /* vnop */ \
+    "slti $1, $3, 5\n" \
+    W(0x4a0002ff) /* vnop */ \
+    W(0xf8470000) /* sqc2 $vf7, 0($2) */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0xd888ffe0) /* lqc2 $vf8, -32($4) */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0xf8460010) /* sqc2 $vf6, 16($2) */ \
+    W(0xd886fff0) /* lqc2 $vf6, -16($4) */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0xf8470020) /* sqc2 $vf7, 32($2) */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0x4a0002ff) /* vnop */ \
+    W(0xf8450030) /* sqc2 $vf5, 48($2) */ \
+    "addiu $2, $2, 64\n" \
+    W(0xd8880000) /* lqc2 $vf8, 0($4) */ \
+    W(0xd8850010) /* lqc2 $vf5, 16($4) */ \
+    "beqz $1, 2b\n" \
+    "addiu $4, $4, 64\n"
+#define MXV_LOOP_NEW_SQ12 \
+    W(0x4be821bc) /* vmulax.xyzw $acc, $vf4, $vf8 */ \
+    "addiu $3, $3, -4\n" \
+    W(0x4be818bd) /* vmadday.xyzw $acc, $vf3, $vf8 */ \
+    "slti $1, $3, 5\n" \
+    W(0x4be810be) /* vmaddaz.xyzw $acc, $vf2, $vf8 */ \
+    W(0xf84c0000) /* sqc2 $vf12, 0($2) */ \
+    W(0x4be809cb) /* vmaddw.xyzw $vf7, $vf1, $vf8 */ \
+    W(0x4be521bc) /* vmulax.xyzw $acc, $vf4, $vf5 */ \
+    W(0x4be518bd) /* vmadday.xyzw $acc, $vf3, $vf5 */ \
+    W(0xd888ffe0) /* lqc2 $vf8, -32($4) */ \
+    W(0x4be510be) /* vmaddaz.xyzw $acc, $vf2, $vf5 */ \
+    W(0x4be5094b) /* vmaddw.xyzw $vf5, $vf1, $vf5 */ \
+    W(0x4be821bc) /* vmulax.xyzw $acc, $vf4, $vf8 */ \
+    W(0xf84c0010) /* sqc2 $vf12, 16($2) */ \
+    W(0xd886fff0) /* lqc2 $vf6, -16($4) */ \
+    W(0x4be818bd) /* vmadday.xyzw $acc, $vf3, $vf8 */ \
+    W(0x4be810be) /* vmaddaz.xyzw $acc, $vf2, $vf8 */ \
+    W(0xf84c0020) /* sqc2 $vf12, 32($2) */ \
+    W(0x4be809cb) /* vmaddw.xyzw $vf7, $vf1, $vf8 */ \
+    W(0x4be621bc) /* vmulax.xyzw $acc, $vf4, $vf6 */ \
+    W(0x4be618bd) /* vmadday.xyzw $acc, $vf3, $vf6 */ \
+    W(0x4be610be) /* vmaddaz.xyzw $acc, $vf2, $vf6 */ \
+    W(0x4be6098b) /* vmaddw.xyzw $vf6, $vf1, $vf6 */ \
+    W(0xf84c0030) /* sqc2 $vf12, 48($2) */ \
+    "addiu $2, $2, 64\n" \
+    W(0xd8880000) /* lqc2 $vf8, 0($4) */ \
+    W(0xd8850010) /* lqc2 $vf5, 16($4) */ \
+    "beqz $1, 2b\n" \
+    "addiu $4, $4, 64\n"
+KERNEL_RAW64(k_mxv_old_vnop, MXV_SETUP_BANK_B(1), MXV_LOOP_OLD_VNOP)
+KERNEL_RAW64(k_mxv_old_sq12, MXV_SETUP_BANK_B(1), MXV_LOOP_OLD_SQ12)
+KERNEL_RAW64(k_mxv_new_vnop, MXV_SETUP_BANK_B(1), MXV_LOOP_NEW_VNOP)
+KERNEL_RAW64(k_mxv_new_sq12, MXV_SETUP_BANK_B(1), MXV_LOOP_NEW_SQ12)
 
 // The same with the output at other distances from the input.
 #define MXV_SETUP_OUT(off)                                             \
@@ -2159,7 +2401,8 @@ void uarch_run_all(u32 *big, int big_words) {
         run_table("Loads and stores, SPRAM", mem, sizeof(mem) / sizeof(mem[0]),
                   (u32 *)0x70003f00);
         // 32 iterations of 4 vectors: 2 KB in, 2 KB out 4 KB after it
-        static u32 mxv_buf[2048] __attribute__((aligned(64)));
+        // 16 KB, as SPRAM: the kernels use offsets up to 16 KB.
+        static u32 mxv_buf[4096] __attribute__((aligned(64)));
         u32 *spram = (u32 *)0x70000000;
         printf("--- VPU Mat x Vec loop (cyc/iter, 4 vectors) ---\n");
         print_line("old order, cached", run(k_mxv_old, mxv_buf, 32, 1), "iter",
@@ -2197,6 +2440,8 @@ void uarch_run_all(u32 *big, int big_words) {
         } walk[] = {
             {"old order, 64-aligned", k_mxv_old_a64, "Mat x Vec loop"},
             {"new order, 64-aligned", k_mxv_new_a64, "Mat x Vec loop"},
+            {"old order, out,in bank", k_mxv_old_bank, "main.c layout"},
+            {"new order, out,in bank", k_mxv_new_bank, "main.c layout"},
             {"16 vnop", k_walk_vnop, "base"},
             {"4 sqc2, 16 vnop", k_walk_s, "walking"},
             {"4 sqc2 fixed, 16 vnop", k_walk_s_c, "same address"},
@@ -2219,6 +2464,55 @@ void uarch_run_all(u32 *big, int big_words) {
             {"(sqc2,lqc2 +8192) x4", k_sl_d8192, "fixed"},
             {"(sqc2,lqc2 -1024) x4", k_sl_dm1024, "fixed"},
             {"(sqc2,lqc2 -4096) x4", k_sl_dm4096, "fixed"},
+            {"(sqc2,lqc2 -16) top", k_sl_t16, "same block"},
+            {"(sqc2,lqc2 -64) top", k_sl_t64, "same block"},
+            {"(sqc2,lqc2 -256) top", k_sl_t256, "same block"},
+            {"(sqc2,lqc2 -512) top", k_sl_t512, "same block"},
+            {"(sqc2,lqc2 -1024) top", k_sl_t1024, "same block"},
+            {"(sqc2,lqc2 -2048) top", k_sl_t2048, "same block"},
+            {"(sqc2,lqc2 -3072) top", k_sl_t3072, "same block"},
+            {"ld -32 of st at 0x1000", k_sl_below_4096, "pattern"},
+            {"ld +32 of st at 0x1000", k_sl_above_4096, "pattern"},
+            {"ld -32 of st at 0x1800", k_sl_below_6144, "pattern"},
+            {"ld +32 of st at 0x1800", k_sl_above_6144, "pattern"},
+            {"ld -32 of st at 0x1fc0", k_sl_below_8128, "pattern"},
+            {"ld +32 of st at 0x1fc0", k_sl_above_8128, "pattern"},
+            {"ld -32 of st at 0x3f00", k_sl_below_16128, "pattern"},
+            {"ld +32 of st at 0x3f00", k_sl_above_16128, "pattern"},
+            {"(s,l) x4 walk, in +64", k_slsl_d64, "walking"},
+            {"4 s,4 l walk, in +64", k_s4l4_d64, "walking"},
+            {"(s,l) x4 walk, in +256", k_slsl_d256, "walking"},
+            {"4 s,4 l walk, in +256", k_s4l4_d256, "walking"},
+            {"(s,l) x4 walk, in +1024", k_slsl_d1024, "walking"},
+            {"4 s,4 l walk, in +1024", k_s4l4_d1024, "walking"},
+            {"(s,l) x4 walk, in +2048", k_slsl_d2048, "walking"},
+            {"4 s,4 l walk, in +2048", k_s4l4_d2048, "walking"},
+            {"(s,l) x4 walk, in +2080", k_slsl_d2080, "walking"},
+            {"4 s,4 l walk, in +2080", k_s4l4_d2080, "walking"},
+            {"(s,l) x4 walk, in +3072", k_slsl_d3072, "walking"},
+            {"4 s,4 l walk, in +3072", k_s4l4_d3072, "walking"},
+            {"(s,l) x4 walk, in -64", k_slsl_dm64, "walking"},
+            {"4 s,4 l walk, in -64", k_s4l4_dm64, "walking"},
+            {"(s,l) x4 walk, in -2048", k_slsl_dm2048, "walking"},
+            {"4 s,4 l walk, in -2048", k_s4l4_dm2048, "walking"},
+            {"(s,l) x4 walk, in -4096", k_slsl_dm4096, "walking"},
+            {"4 s,4 l walk, in -4096", k_s4l4_dm4096, "walking"},
+            {"old order, block 0", k_mxv_old_b0, "out, in"},
+            {"new order, block 0", k_mxv_new_b0, "out, in"},
+            {"(s,l) x4 walk, block 0", k_slsl_b0, "out, in"},
+            {"old order, block 1", k_mxv_old_b1, "out, in"},
+            {"new order, block 1", k_mxv_new_b1, "out, in"},
+            {"(s,l) x4 walk, block 1", k_slsl_b1, "out, in"},
+            {"old order, block 2", k_mxv_old_b2, "out, in"},
+            {"new order, block 2", k_mxv_new_b2, "out, in"},
+            {"(s,l) x4 walk, block 2", k_slsl_b2, "out, in"},
+            {"old order, block 3", k_mxv_old_b3, "out, in"},
+            {"new order, block 3", k_mxv_new_b3, "out, in"},
+            {"(s,l) x4 walk, block 3", k_slsl_b3, "out, in"},
+            {"old order, vnop for VU0 ops", k_mxv_old_vnop, "block 1, out, in"},
+            {"old order, sqc2 of $vf12", k_mxv_old_sq12, "block 1, out, in"},
+            {"new order, vnop for VU0 ops", k_mxv_new_vnop, "block 1, out, in"},
+            {"new order, sqc2 of $vf12", k_mxv_new_sq12, "block 1, out, in"},
         };
         for (int m = 0; m < 2; m++) {
             printf("--- Walking loads and stores, %s (cyc/iter) ---\n",
