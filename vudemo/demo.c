@@ -63,6 +63,13 @@ static void load_micro(void) {
 
 static uint64_t chain_buf[2][16][2] __attribute__((aligned(64)));
 
+/* VU0's input by VIF0 DMA (1) or through COP2 (0). Both are correct on the
+   PS2; COP2 is faster here (all three units: 36.2 vs 44.4 cycles/quadword),
+   because the VIF0 path needs SyncDCache and a DMA start per batch. */
+#ifndef VU0_DMA
+#define VU0_DMA 0
+#endif
+
 /* EE cycles per phase of the micro batches of a run: [vu][send, wait, read] */
 static uint32_t phase[2][3];
 
@@ -78,8 +85,23 @@ static void batch_start(int vu, f32x4 *part, int n) {
     struct vif_chain ch = {UNCACHED(&chain_buf[vu][0]), 0};
     chain_unpack(&ch, 0, heads[vu], VUK_POLY_X, VIF_STCYCL(1, 1));
     chain_unpack(&ch, VUK_POLY_X, part, n, VIF_NOP);
-    STEP("VU1 batch of %d: chain of %d tags", n, ch.n + 1);
-    chain_send(DMA_CHANNEL_VIF1, &ch, VIF_MSCAL(0), VIF_FLUSHE);
+    chain_end(&ch, VIF_MSCAL(0), VIF_FLUSHE);
+    STEP("VU1 batch of %d: chain of %d tags", n, ch.n);
+    chain_start(DMA_CHANNEL_VIF1, &ch);
+  } else if (VU0_DMA) {
+    /* The same through VIF0, but with the tags and parameters written cached
+       and then written back: with them written uncached, channel 0 did not
+       start on the PS2 (CHCR.STR read back 0, TADR did not move), while
+       VIF1 works that way and VIF0 works this way (vif0probe.c). */
+    memcpy(heads[vu], head, sizeof(head));
+    struct vif_chain ch = {chain_buf[vu], 0};
+    chain_unpack(&ch, 0, heads[vu], VUK_POLY_X, VIF_STCYCL(1, 1));
+    chain_unpack(&ch, VUK_POLY_X, part, n, VIF_NOP);
+    chain_end(&ch, VIF_MSCAL(0), VIF_FLUSHE);
+    SyncDCache(heads[vu], (char *)heads[vu] + sizeof(head) - 1);
+    SyncDCache(chain_buf[vu], (char *)(chain_buf[vu] + ch.n) - 1);
+    STEP("VU0 batch of %d: chain of %d tags", n, ch.n);
+    chain_start(DMA_CHANNEL_VIF0, &ch);
   } else {
     vu0_write(0, head, VUK_POLY_X);
     vu0_write(VUK_POLY_X, part, n);
@@ -92,11 +114,11 @@ static void batch_start(int vu, f32x4 *part, int n) {
 
 static void batch_finish(int vu, f32x4 *part, int n) {
   uint32_t t0 = ee_cycles();
-  if (!vu)
+  if (!vu && !VU0_DMA)
     vu0_wait();
-  else if (vif_wait(1))
-    printf("VU1 did not stop within a second (VPU-STAT %08x, VIF1_STAT %08x)\n",
-           vpu_stat(), VIF1_STAT);
+  else if (vif_wait(vu))
+    printf("VU%d did not stop within a second (VPU-STAT %08x, VIF%d_STAT %08x)\n", vu,
+           vpu_stat(), vu, vu ? VIF1_STAT : VIF0_STAT);
   uint32_t t1 = ee_cycles();
   STEP("VU%d batch: stopped, read results", vu);
   /* the results go to memory, not into the data cache */

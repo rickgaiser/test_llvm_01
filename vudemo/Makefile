@@ -35,7 +35,7 @@ LLCFLAGS = -mtriple=vu -O3
 MODES = macro micro all bench debug
 ELFS  = $(MODES:%=$(OUT)/vudemo_%.elf)
 
-all: $(ELFS) $(OUT)/mulprobe.elf $(OUT)/vu0_poly.s $(OUT)/vu1_poly.s
+all: $(ELFS) $(OUT)/mulprobe.elf $(OUT)/vif0probe.elf $(OUT)/vu0_poly.s $(OUT)/vu1_poly.s
 
 $(OUT):
 	mkdir -p $@
@@ -90,6 +90,13 @@ $(OUT)/mulprobe.o: $(HERE)/mulprobe.c | $(OUT)
 	$(CLANG) $(CFLAGS) -O1 -fno-fast-math -mvu0 -c $< -o $@
 
 $(OUT)/mulprobe.elf: $(OUT)/mulprobe.o
+	$(EE_GCC) -o $@ $^ $(LDFLAGS) -ldma
+
+# Hardware check: which ways of sending to VIF0 by DMA work?
+$(OUT)/vif0probe.o: $(HERE)/vif0probe.c | $(OUT)
+	$(CLANG) $(CFLAGS) -O1 -c $< -o $@
+
+$(OUT)/vif0probe.elf: $(OUT)/vif0probe.o
 	$(EE_GCC) -o $@ $^ $(LDFLAGS) -ldma
 
 clean:

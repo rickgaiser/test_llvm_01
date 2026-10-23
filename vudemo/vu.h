@@ -196,13 +196,15 @@ static inline void chain_unpack(struct vif_chain *c, int addr, const void *src,
   }
 }
 
-/* Ends the chain with the VIF codes vif0, vif1 and starts its DMA on the
-   VIF channel (DMA_CHANNEL_VIF0 or DMA_CHANNEL_VIF1). The tags are written
-   uncached (c->q is an UNCACHED address); SYNC makes sure they are in
-   memory before the DMA reads them. */
-static inline void chain_send(int channel, struct vif_chain *c, uint32_t vif0,
-                              uint32_t vif1) {
+/* Ends the chain with the VIF codes vif0, vif1. */
+static inline void chain_end(struct vif_chain *c, uint32_t vif0, uint32_t vif1) {
   dma_tag(c, DMA_TAG_END, 0, 0, vif0, vif1);
+}
+
+/* Starts the DMA of the chain on the VIF channel (DMA_CHANNEL_VIF0 or
+   DMA_CHANNEL_VIF1). The tags must be in memory: written uncached (then SYNC
+   drains the write buffer), or cached and written back with SyncDCache. */
+static inline void chain_start(int channel, struct vif_chain *c) {
   __asm__ volatile("sync" ::: "memory");
   /* the DMA controller takes a physical address (the uncached alias crashed
      the PS2, PCSX2 masks it) */
