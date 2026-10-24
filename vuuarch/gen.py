@@ -14,7 +14,10 @@ A probe with `show` also stores registers after the loop (its `post` words
 write quadwords from data address 1), and the EE prints them: value checks,
 for example whether a Q read waits for the divide.
 
-    gen.py <out dir> <llvm bin dir>
+    gen.py <out dir> <llvm bin dir> [timing]
+
+With `timing`, only the probes with a model are built (the timings that
+vu_check.py compares), not the value checks.
 
 writes <out>/probes/*.vsm (+ .vu.elf, .bin), <out>/probes.S (the code) and
 <out>/probes.h (the table).
@@ -255,6 +258,8 @@ def asm(words):
 
 def main():
     out, llvm = sys.argv[1], sys.argv[2]
+    if sys.argv[3:] == ["timing"]:
+        PROBES[:] = [p for p in PROBES if p["model"] is not None]
     pdir = os.path.join(out, "probes")
     os.makedirs(pdir, exist_ok=True)
     blobs = ['.section .vutext, "a"']

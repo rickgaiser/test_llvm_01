@@ -140,19 +140,45 @@ typedef struct {
 
 #define NUM_VERTS 512
 #define NUM_TRIS (NUM_VERTS - 2)
-static vec4 verts[NUM_VERTS];
-static vec4 normals[NUM_VERTS];
-static vec4 matrix[3];
+typedef float v4sf_alias __attribute__((vector_size(16), may_alias));
 // Screen position in 12.4 fixed point and depth, as for the GS XYZ2 register
-static struct {
+typedef struct {
     int x, y, z, pad;
-} screen[NUM_VERTS] __attribute__((aligned(16)));
-static u32 colors[NUM_VERTS];
+} screen_pos;
+// One struct gives every compiler the same layout (as gfx_mem): the arrays
+// that a test reads and writes together start at different addresses modulo
+// 4 KB, so they do not compete for the 2 ways of the data cache.
+static struct {
+    vec4 verts[NUM_VERTS];               // 0x0000 (mod 4 KB 0x000)
+    u32 pad0[256];
+    vec4 normals[NUM_VERTS];             // 0x2400 (0x400)
+    u32 pad1[256];
+    v4sf_alias scaled_v[NUM_VERTS];      // 0x4800 (0x800)
+    u32 pad2[256];
+    vec4 face_normals[NUM_VERTS];        // 0x6c00 (0xc00)
+    u32 pad3[512];
+    screen_pos screen[NUM_VERTS];        // 0x9400 (0x400)
+    u32 pad4[256];
+    vec4 xformed[NUM_VERTS];             // 0xb800 (0x800)
+    u32 pad5[256];
+    u32 colors[NUM_VERTS];               // 0xdc00 (0xc00)
+    u32 pad6[512];
+    v4sf_alias face_normals_v[NUM_VERTS]; // 0xec00 (0xc00)
+    u16 visible[NUM_TRIS * 3];
+} geom_mem __attribute__((aligned(4096)));
+#define verts geom_mem.verts
+#define normals geom_mem.normals
+#define scaled_v geom_mem.scaled_v
+#define face_normals geom_mem.face_normals
+#define screen geom_mem.screen
+#define xformed geom_mem.xformed
+#define colors geom_mem.colors
+#define face_normals_v geom_mem.face_normals_v
+#define visible geom_mem.visible
+static vec4 matrix[3];
 // A model-view matrix in memory, rows of the struct form: not a static, so
 // it is not folded into the code
 vec4 geom_model_view[4];
-static vec4 xformed[NUM_VERTS];
-static u16 visible[NUM_TRIS * 3];
 
 // A small signed multiple of 1/8, so products and sums stay exact
 static float eighths(int range) {
@@ -338,7 +364,6 @@ static u32 backface_cull(void) {
 // Face normals of the triangles of a strip: the cross product of two edges.
 // The coordinates are small whole numbers and powers of two, so the results
 // are exact.
-static vec4 face_normals[NUM_TRIS];
 
 static u32 face_normal(void) {
     for (int i = 0; i < NUM_TRIS; i++) {
@@ -348,13 +373,11 @@ static u32 face_normal(void) {
         face_normals[i] = (vec4){ey * fz - ez * fy, ez * fx - ex * fz,
                                  ex * fy - ey * fx, 0.0f};
     }
-    return app_hash(face_normals, sizeof(face_normals));
+    return app_hash(face_normals, NUM_TRIS * sizeof(vec4));
 }
 
 // The same with vector types, as VU0 code is often written: the edges are
 // vector subtracts and the cross product is two shuffles of each.
-typedef float v4sf_alias __attribute__((vector_size(16), may_alias));
-static v4sf_alias face_normals_v[NUM_TRIS];
 
 static u32 face_normal_v4sf(void) {
     const v4sf_alias *v = (const v4sf_alias *)verts;
@@ -367,7 +390,7 @@ static u32 face_normal_v4sf(void) {
         n[3] = 0.0f;
         face_normals_v[i] = n;
     }
-    return app_hash(face_normals_v, sizeof(face_normals_v));
+    return app_hash(face_normals_v, NUM_TRIS * sizeof(v4sf_alias));
 }
 
 // Lighting with vector types: the dot product is a lane sum, and its maximum
@@ -398,7 +421,6 @@ static u32 lighting_v4sf(void) {
 
 // A vector scaled by the product of fields of two others, such as a color by
 // a light's intensity and a material's factor: v * (a.y * b.z).
-static v4sf_alias scaled_v[NUM_VERTS];
 
 static u32 field_scale_v4sf(void) {
     const v4sf_alias *v = (const v4sf_alias *)verts;

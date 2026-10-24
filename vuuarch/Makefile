@@ -1,7 +1,9 @@
 # VU micro-mode microbenchmarks: latencies and throughputs of VU0/VU1 micro
 # instructions, measured on the PS2 (gen.py, vuuarch.c). Built on maxsdk.
 #
-#   make [OUT=<dir>]   -> $(OUT)/vuuarch.elf
+#   make [OUT=<dir>] [PROBES=timing]   -> $(OUT)/vuuarch.elf
+#
+# PROBES=timing builds only the timings that vu_check.py compares.
 #
 # Timings only from the real PS2 (ps2-hw-test skill), never from PCSX2.
 
@@ -27,7 +29,7 @@ $(MX_LIB) $(MX_CRT0): FORCE
 
 $(OUT)/probes.h $(OUT)/probes.S: $(HERE)/gen.py $(LLVM)/llvm-mc
 	mkdir -p $(OUT)
-	python3 -I $(HERE)/gen.py $(OUT) $(LLVM)
+	python3 -I $(HERE)/gen.py $(OUT) $(LLVM) $(PROBES)
 
 $(OUT)/probes.o: $(OUT)/probes.S
 	$(CLANG) $(CFLAGS) -c $< -o $@
