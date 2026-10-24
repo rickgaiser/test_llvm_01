@@ -449,6 +449,26 @@ static u32 project_v4sf(void) {
     return app_hash(scaled_v, sizeof(scaled_v));
 }
 
+// The sum of the vertices of each group weighted by their normals, as for
+// the moments of a mesh: v4sf sums that a loop carries. The group length is
+// in memory, so the loop is not unrolled away.
+#define NUM_GROUPS (NUM_VERTS / 32)
+int geom_group_len = 32;
+static v4sf_alias group_sum[NUM_GROUPS];
+
+static u32 weighted_sum_v4sf(void) {
+    const v4sf_alias *v = (const v4sf_alias *)verts;
+    const v4sf_alias *n = (const v4sf_alias *)normals;
+    int len = geom_group_len;
+    for (int g = 0; g < NUM_GROUPS; g++) {
+        v4sf_alias s = {0.0f, 0.0f, 0.0f, 0.0f};
+        for (int i = g * len; i < (g + 1) * len; i++)
+            s += v[i] * n[i];
+        group_sum[g] = s;
+    }
+    return app_hash(group_sum, sizeof(group_sum));
+}
+
 // Bounding spheres against the 6 planes of a view frustum
 #define NUM_SPHERES 1024
 static vec4 spheres[NUM_SPHERES];  // center, radius
@@ -493,6 +513,7 @@ static const app_test geom_tests[] = {
     {"Field Offset bc v4sf", "Mvert/s", NUM_VERTS, init_geom,
      field_scale_bc_v4sf},
     {"Project v4sf", "Mvert/s", NUM_VERTS, init_geom, project_v4sf},
+    {"Weighted Sum v4sf", "Mvert/s", NUM_VERTS, init_geom, weighted_sum_v4sf},
     {"MxV Row 4x4", "Mvert/s", NUM_VERTS, init_mxv, mxv_row_4x4},
     {"MxV Col 4x4", "Mvert/s", NUM_VERTS, init_mxv, mxv_col_4x4},
     {"MxV Row 3x4", "Mvert/s", NUM_VERTS, init_mxv, mxv_row_3x4},

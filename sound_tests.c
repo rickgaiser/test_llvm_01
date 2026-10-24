@@ -124,11 +124,61 @@ static u32 resample(void) {
     return app_hash(rs_out, sizeof(rs_out));
 }
 
+// --- Autocorrelation, Q15: the sums of products of a signal with itself
+// shifted by 0-31 samples, as for pitch detection ---
+
+#define CORR_N 512
+#define CORR_LAGS 32
+static s16 corr_in[CORR_N + CORR_LAGS] __attribute__((aligned(64)));
+static s32 corr_out[CORR_LAGS] __attribute__((aligned(64)));
+
+static void init_corr(void) {
+    // 11-bit samples: a sum of 512 products fits in 31 bits
+    for (int i = 0; i < CORR_N + CORR_LAGS; i++)
+        corr_in[i] = (s16)(app_rand() >> 16) >> 5;
+}
+
+static u32 correlate(void) {
+    for (int lag = 0; lag < CORR_LAGS; lag++) {
+        s32 acc = 0;
+        for (int i = 0; i < CORR_N; i++)
+            acc += corr_in[i] * corr_in[i + lag];
+        corr_out[lag] = acc;
+    }
+    return app_hash(corr_out, sizeof(corr_out));
+}
+
+// --- Energy of blocks of float samples (sums of squares) ---
+
+#define ENERGY_N 4096
+#define ENERGY_BLOCK 256
+static float energy_in[ENERGY_N] __attribute__((aligned(64)));
+static float energy_out[ENERGY_N / ENERGY_BLOCK] __attribute__((aligned(64)));
+
+static void init_energy(void) {
+    // Multiples of 1/16 below 8: the squares and their sums stay exact
+    for (int i = 0; i < ENERGY_N; i++)
+        energy_in[i] = (float)((int)(app_rand() >> 24) - 128) / 16.0f;
+}
+
+static u32 energy(void) {
+    for (int b = 0; b < ENERGY_N / ENERGY_BLOCK; b++) {
+        const float *x = &energy_in[b * ENERGY_BLOCK];
+        float e = 0.0f;
+        for (int i = 0; i < ENERGY_BLOCK; i++)
+            e += x[i] * x[i];
+        energy_out[b] = e;
+    }
+    return app_hash(energy_out, sizeof(energy_out));
+}
+
 static const app_test sound_tests[] = {
     {"Mix 8 Voices", "Msmp/s", NUM_VOICES * MIX_FRAMES, init_mix, mix},
     {"ADPCM Decode", "Msmp/s", ADPCM_SAMPLES, init_adpcm, adpcm_decode},
     {"FIR 32", "Msmp/s", FIR_SAMPLES, init_fir, fir},
     {"Resample", "Msmp/s", RESAMPLE_OUT, init_resample, resample},
+    {"Correlate Q15", "MMAC/s", CORR_N * CORR_LAGS, init_corr, correlate},
+    {"Energy f32", "Msmp/s", ENERGY_N, init_energy, energy},
 };
 const app_suite sound_suite = {"SOUND", "Sound", sound_tests,
                                sizeof(sound_tests) / sizeof(sound_tests[0])};
