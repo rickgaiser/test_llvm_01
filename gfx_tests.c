@@ -335,6 +335,98 @@ static u32 backface_cull(void) {
     return app_hash(visible, n * 2) ^ n;
 }
 
+// Face normals of the triangles of a strip: the cross product of two edges.
+// The coordinates are small whole numbers and powers of two, so the results
+// are exact.
+static vec4 face_normals[NUM_TRIS];
+
+static u32 face_normal(void) {
+    for (int i = 0; i < NUM_TRIS; i++) {
+        vec4 a = verts[i], b = verts[i + 1], c = verts[i + 2];
+        float ex = b.x - a.x, ey = b.y - a.y, ez = b.z - a.z;
+        float fx = c.x - a.x, fy = c.y - a.y, fz = c.z - a.z;
+        face_normals[i] = (vec4){ey * fz - ez * fy, ez * fx - ex * fz,
+                                 ex * fy - ey * fx, 0.0f};
+    }
+    return app_hash(face_normals, sizeof(face_normals));
+}
+
+// The same with vector types, as VU0 code is often written: the edges are
+// vector subtracts and the cross product is two shuffles of each.
+typedef float v4sf_alias __attribute__((vector_size(16), may_alias));
+static v4sf_alias face_normals_v[NUM_TRIS];
+
+static u32 face_normal_v4sf(void) {
+    const v4sf_alias *v = (const v4sf_alias *)verts;
+    for (int i = 0; i < NUM_TRIS; i++) {
+        v4sf_alias e = v[i + 1] - v[i], f = v[i + 2] - v[i];
+        v4sf_alias n = __builtin_shufflevector(e, e, 1, 2, 0, 3) *
+                           __builtin_shufflevector(f, f, 2, 0, 1, 3) -
+                       __builtin_shufflevector(e, e, 2, 0, 1, 3) *
+                           __builtin_shufflevector(f, f, 1, 2, 0, 3);
+        n[3] = 0.0f;
+        face_normals_v[i] = n;
+    }
+    return app_hash(face_normals_v, sizeof(face_normals_v));
+}
+
+// Lighting with vector types: the dot product is a lane sum, and its maximum
+// with 0, scaled by the light's intensity (w), scales the light's color.
+static u32 lighting_v4sf(void) {
+    static const v4sf_alias dir[3] = {{0.5f, 0.5f, -0.5f, 1.0f},
+                                      {-0.75f, 0.25f, 0.0f, 0.5f},
+                                      {0.0f, -0.5f, 0.75f, 0.75f}};
+    static const v4sf_alias col[3] = {{0.5f, 0.375f, 0.25f, 0.0f},
+                                      {0.125f, 0.25f, 0.5f, 0.0f},
+                                      {0.25f, 0.25f, 0.125f, 0.0f}};
+    const v4sf_alias *nv = (const v4sf_alias *)normals;
+    for (int i = 0; i < NUM_VERTS; i++) {
+        v4sf_alias n = nv[i];
+        v4sf_alias c = {0.125f, 0.125f, 0.125f, 0.0f};
+        for (int l = 0; l < 3; l++) {
+            v4sf_alias p = n * dir[l];
+            float d = __builtin_fmaxf(p[0] + p[1] + p[2], 0.0f) * dir[l][3];
+            c += col[l] * d;
+        }
+        colors[i] = (u32)(__builtin_fminf(c[0], 1.0f) * 128.0f) |
+                    ((u32)(__builtin_fminf(c[1], 1.0f) * 128.0f) << 8) |
+                    ((u32)(__builtin_fminf(c[2], 1.0f) * 128.0f) << 16) |
+                    0x80000000u;
+    }
+    return app_hash(colors, sizeof(colors));
+}
+
+// A vector scaled by the product of fields of two others, such as a color by
+// a light's intensity and a material's factor: v * (a.y * b.z).
+static v4sf_alias scaled_v[NUM_VERTS];
+
+static u32 field_scale_v4sf(void) {
+    const v4sf_alias *v = (const v4sf_alias *)verts;
+    const v4sf_alias *n = (const v4sf_alias *)normals;
+    for (int i = 0; i < NUM_VERTS; i++)
+        scaled_v[i] = n[i] * (v[i][1] * n[i][2]);
+    return app_hash(scaled_v, sizeof(scaled_v));
+}
+
+// A vector offset by the product of fields of two others, broadcast by
+// shuffles: n + v.y * n.z.
+static u32 field_scale_bc_v4sf(void) {
+    const v4sf_alias *v = (const v4sf_alias *)verts;
+    const v4sf_alias *n = (const v4sf_alias *)normals;
+    for (int i = 0; i < NUM_VERTS; i++)
+        scaled_v[i] = n[i] + __builtin_shufflevector(v[i], v[i], 1, 1, 1, 1) *
+                                 __builtin_shufflevector(n[i], n[i], 2, 2, 2, 2);
+    return app_hash(scaled_v, sizeof(scaled_v));
+}
+
+// A perspective divide with vector types: v / v.z (a power of two, exact).
+static u32 project_v4sf(void) {
+    const v4sf_alias *v = (const v4sf_alias *)verts;
+    for (int i = 0; i < NUM_VERTS; i++)
+        scaled_v[i] = v[i] * (1.0f / v[i][2]);
+    return app_hash(scaled_v, sizeof(scaled_v));
+}
+
 // Bounding spheres against the 6 planes of a view frustum
 #define NUM_SPHERES 1024
 static vec4 spheres[NUM_SPHERES];  // center, radius
@@ -374,11 +466,18 @@ static u32 frustum_cull(void) {
 static const app_test geom_tests[] = {
     {"Transform", "Mvert/s", NUM_VERTS, init_geom, transform},
     {"Lighting", "Mvert/s", NUM_VERTS, init_geom, lighting},
+    {"Lighting v4sf", "Mvert/s", NUM_VERTS, init_geom, lighting_v4sf},
+    {"Field Scale v4sf", "Mvert/s", NUM_VERTS, init_geom, field_scale_v4sf},
+    {"Field Offset bc v4sf", "Mvert/s", NUM_VERTS, init_geom,
+     field_scale_bc_v4sf},
+    {"Project v4sf", "Mvert/s", NUM_VERTS, init_geom, project_v4sf},
     {"MxV Row 4x4", "Mvert/s", NUM_VERTS, init_mxv, mxv_row_4x4},
     {"MxV Col 4x4", "Mvert/s", NUM_VERTS, init_mxv, mxv_col_4x4},
     {"MxV Row 3x4", "Mvert/s", NUM_VERTS, init_mxv, mxv_row_3x4},
     {"MxV Col 3x4", "Mvert/s", NUM_VERTS, init_mxv, mxv_col_3x4},
     {"Backface Cull", "Mtri/s", NUM_TRIS, init_cull, backface_cull},
+    {"Face Normals", "Mtri/s", NUM_TRIS, init_geom, face_normal},
+    {"Face Normals v4sf", "Mtri/s", NUM_TRIS, init_geom, face_normal_v4sf},
     {"Frustum Cull", "Mobj/s", NUM_SPHERES, init_spheres, frustum_cull},
 };
 const app_suite geom_suite = {"GEOM", "3D Geometry", geom_tests,

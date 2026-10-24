@@ -8,7 +8,7 @@
 static const app_suite *const suites[] = {&gfx_suite, &geom_suite,
                                           &sound_suite, &emu_suite};
 #define NUM_SUITES (sizeof(suites) / sizeof(suites[0]))
-#define MAX_TESTS 8
+#define MAX_TESTS 16
 
 static float perf[NUM_SUITES][MAX_TESTS];
 static u32 rand_state;

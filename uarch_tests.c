@@ -851,6 +851,49 @@ KERNEL(k_vdiv_vnop2_vaddq, 16, VU0_ONES_SETUP, VDIV7X VNOP VNOP VADDQX)
 KERNEL(k_vdiv_vnop2, 16, VU0_ONES_SETUP, VDIV7X VNOP VNOP)
 KERNEL(k_vnop, 64, VU0_ONES_SETUP, VNOP)
 
+// Cross product, ACC <-> VF copies (an allocatable ACC needs them), masked
+// VMOVE, CLIP (encodings from llvm-mc -mattr=+vu0, VU Users Manual layout).
+#define VOPMULA_1 W(0x4bc20afe)     // vopmula.xyz $ACC, $vf1, $vf2
+#define VOPMSUB_1 W(0x4bc2086e)     // vopmsub.xyz $vf1, $vf1, $vf2
+#define VCLIPW_1 W(0x4bc209ff)      // vclipw.xyz $vf1, $vf2w
+#define VMULAW_ACC_1 W(0x4be009bf)  // vmulaw.xyzw $ACC, $vf1, $vf0w (VF -> ACC)
+#define VMSUBX_1_ACC W(0x4be0004c)  // vmsubx.xyzw $vf1, $vf0, $vf0x (ACC -> VF)
+#define VMOVE_1 W(0x4be10b3c)       // vmove.xyzw $vf1, $vf1
+#define VMOVEX_1_2 W(0x4b01133c)    // vmove.x $vf1, $vf2
+KERNEL(k_vopmula_vopmsub, 64, VU0_SETUP, VOPMULA_1 VOPMSUB_1)
+KERNEL(k_vclipw, 64, VU0_SETUP, VCLIPW_1)
+KERNEL(k_vf_acc_vf, 64, VU0_SETUP, VMULAW_ACC_1 VMSUBX_1_ACC)
+KERNEL(k_vmove, 64, VU0_SETUP, VMOVE_1)
+// masked VMOVE into the register it reads: does a merge wait for the
+// other fields? (vf1.x <- vf2.x, then vf1.xyzw <- vf1)
+KERNEL(k_vmovex_vmove, 64, VU0_SETUP, VMOVEX_1_2 VMOVE_1)
+
+// v4f32 select(a < b, x, y): a $vf12, b $vf13, x $vf14, y $vf15, all 1.0;
+// $vf21 = 2^127. The _lat kernels write the result to a (a chain through
+// a), the _tp kernels to $vf1 (independent repetitions).
+#define SEL_SETUP                                                    \
+    VU0_SETUP W(0x48a86000) W(0x48a86800) W(0x48a87000)             \
+    W(0x48a87800) "lui $8, 0x7f00\n" PEXTLW(8, 8, 8) PCPYLD(8, 8, 8) \
+    W(0x48a8a800)
+// what clang emits (MipsSEISelLowering lowerVU0FSETCC + vselect): compare
+// the bits as signed integers in GPR128 after sign-magnitude correction
+// (registers renamed to $9-$12)
+#define SEL_MMI_BODY                                                 \
+    PNOR(9, 0, 0) W(0x482a6000) PSRLW(9, 9, 1) W(0x482c6800)         \
+    PAND(11, 10, 9) PSRAW(10, 10, 31) PXOR(11, 11, 10)               \
+    PSUBW(10, 11, 10) PAND(9, 12, 9) PSRAW(11, 12, 31) W(0x482c7000) \
+    PXOR(9, 9, 11) PSUBW(9, 9, 11) W(0x482b7800) PCGTW(9, 9, 10)     \
+    PXOR(10, 11, 12) PAND(9, 10, 9) PXOR(9, 11, 9)
+KERNEL(k_sel_mmi_lat, 8, SEL_SETUP, SEL_MMI_BODY W(0x48a96000))
+KERNEL(k_sel_mmi_tp, 8, SEL_SETUP, SEL_MMI_BODY W(0x48a90800))
+// the VU target's way: mask m = clamp((b - a) * 2^127, 0, 1), then
+// r = y + (x - y) * m (VMULA y*1.0, VMADD)
+#define SEL_VU_BODY                                                  \
+    W(0x4bec6d2c) W(0x4bf5a52a) W(0x4be0a510) W(0x4be0a517)          \
+    W(0x4bef75ac) W(0x4be079bf)
+KERNEL(k_sel_vu_lat, 8, SEL_SETUP, SEL_VU_BODY W(0x4bf4b329))
+KERNEL(k_sel_vu_tp, 8, SEL_SETUP, SEL_VU_BODY W(0x4bf4b069))
+
 // Loads after stores, run on the data cache and on SPRAM: the VPU Mat x Vec
 // loop is 2 cycles slower on SPRAM, not in the cache, with sqc2 just before
 // two lqc2. The stores go to 32($24) and 48($24), the loads to 0 and 16.
@@ -2347,6 +2390,15 @@ void uarch_run_all(u32 *big, int big_words) {
         {"vdiv,2 vnop,vaddq", k_vdiv_vnop2_vaddq, 16, "rep", "?"},
         {"vdiv,2 vnop", k_vdiv_vnop2, 16, "rep", "?"},
         {"vnop", k_vnop, 64, "instr", "?"},
+        {"vopmula->vopmsub", k_vopmula_vopmsub, 64, "rep", "= latency, 5?"},
+        {"vclipw", k_vclipw, 64, "instr", "throughput"},
+        {"VF->ACC->VF copy", k_vf_acc_vf, 64, "rep", "vmulaw+vmsubx, 5?"},
+        {"vmove", k_vmove, 64, "instr", "?"},
+        {"vmove.x->vmove", k_vmovex_vmove, 64, "rep", "8 = merge waits"},
+        {"select MMI, latency", k_sel_mmi_lat, 8, "rep", "?"},
+        {"select MMI, throughput", k_sel_mmi_tp, 8, "rep", "?"},
+        {"select VU mask, latency", k_sel_vu_lat, 8, "rep", "?"},
+        {"select VU mask, thruput", k_sel_vu_tp, 8, "rep", "?"},
     };
 
     run_table("Divide, multiply-add, HI/LO, SA, ldl/ldr", intx,

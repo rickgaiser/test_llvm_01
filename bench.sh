@@ -29,10 +29,12 @@ clang_dir() {
   esac
 }
 
-# Extra compiler flags of a variant
+# Extra compiler flags of a variant, plus $BENCH_EXTRA for the clang variants
+# (experiments, e.g. BENCH_EXTRA="-mllvm -some-option=1")
 variant_cflags() {
   case "$1" in
-    feature-vu0) echo "-mvu0" ;;
+    feature-vu0) echo "-mvu0 $BENCH_EXTRA" ;;
+    *) echo "$BENCH_EXTRA" ;;
   esac
 }
 

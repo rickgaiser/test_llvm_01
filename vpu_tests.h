@@ -15,6 +15,10 @@ typedef float v4sf __attribute__((vector_size(16)));
 #endif
 
 // Test functions - v4sf is already 128-bit aligned, add explicit alignment hints
+void vpu_vector_divide(v4sf * restrict a ALIGNED16,
+                       v4sf * restrict b ALIGNED16,
+                       v4sf * restrict result ALIGNED16,
+                       int count);
 void vpu_vector_add(v4sf * restrict a ALIGNED16,
                    v4sf * restrict b ALIGNED16,
                    v4sf * restrict result ALIGNED16,

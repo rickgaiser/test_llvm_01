@@ -5,6 +5,16 @@
 // PS2 memory map: 0x00000000 = cached, 0x20000000 = uncached, 0x30000000 = UCAB
 #define UCAB_ADDR(ptr) ((typeof(ptr))((unsigned int)(ptr) | 0x30000000))
 
+// Divisions of all four fields: through the FPU and the VU0 divider
+void vpu_vector_divide(v4sf * restrict a ALIGNED16,
+                       v4sf * restrict b ALIGNED16,
+                       v4sf * restrict result ALIGNED16,
+                       int count) {
+    for (int i = 0; i < count; i++) {
+        result[i] = a[i] / b[i];
+    }
+}
+
 void vpu_vector_add(v4sf * restrict a ALIGNED16,
                    v4sf * restrict b ALIGNED16,
                    v4sf * restrict result ALIGNED16,

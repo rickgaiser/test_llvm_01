@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <malloc.h>
 #include <timer.h>
 #include "fpu_tests.h"
 #include "int_tests.h"
@@ -72,6 +73,19 @@ static unsigned int dual_result2[2];
 static v4sf vpu_mat[4] __attribute__((aligned(16)));
 static v4sf vpu_vec_a[VPU_NUM_VECTORS] __attribute__((aligned(16)));
 static v4sf vpu_vec_b[VPU_NUM_VECTORS] __attribute__((aligned(16)));
+// Test 9b's own buffers: a, b and out start 1 KB apart modulo 4 KB, so that
+// they do not compete for the 2 ways of the data cache (the layout of the
+// arrays above depends on the code size, which moved Vec Divide by 25%).
+// On the heap: a 4 KB-aligned static moved the data of the other tests
+// (R3000 Interp 10.49 -> 8.22 MIPS).
+struct div_mem {
+    v4sf a[VPU_NUM_VECTORS];   // 0x000
+    u32 pad0[256];
+    v4sf b[VPU_NUM_VECTORS];   // 0x400
+    u32 pad1[256];
+    v4sf out[VPU_NUM_VECTORS]; // 0x800
+};
+static struct div_mem *div_mem;
 static v4sf vpu_vec_out[VPU_NUM_VECTORS] __attribute__((aligned(16)));
 static float vpu_dot_out[VPU_NUM_VECTORS] __attribute__((aligned(16)));
 static v4sf vpu_hm_in[VPU_NUM_VECTORS] __attribute__((aligned(16)));
@@ -388,6 +402,23 @@ int main() {
            vpu_vec_out[0][0], vpu_vec_out[0][1], vpu_vec_out[0][2], vpu_vec_out[0][3]);
     printf("Time: %llu ticks (%.2f us)\n", ticks9, usec9);
     printf("Performance: %.2f MFLOPS\n\n", mflops_vpu2);
+
+    // Test 9b: VPU Vector Divide (v4sf)
+    printf("--- Test 9b: VPU Vec Divide v4sf (%d vecs x %d batches) ---\n", VPU_NUM_VECTORS, vpu_batches);
+    div_mem = memalign(4096, sizeof *div_mem);
+    memcpy(div_mem->a, vpu_vec_a, sizeof div_mem->a);
+    memcpy(div_mem->b, vpu_vec_b, sizeof div_mem->b);
+    u64 start9b = GetTimerSystemTime();
+    for (int iter = 0; iter < vpu_batches; iter++) {
+        vpu_vector_divide(div_mem->a, div_mem->b, div_mem->out, VPU_NUM_VECTORS);
+    }
+    u64 ticks9b = GetTimerSystemTime() - start9b;
+    float usec9b = (float)ticks9b / 150.0f;
+    float mflops_div = (float)VPU_NUM_VECTORS * vpu_batches * 4 / usec9b;
+    printf("First: [%.4f, %.4f, %.4f, %.4f]\n",
+           div_mem->out[0][0], div_mem->out[0][1], div_mem->out[0][2], div_mem->out[0][3]);
+    printf("Result: 0x%08x\n", app_hash(div_mem->out, sizeof(div_mem->out)));
+    printf("Performance: %.2f MFLOPS\n\n", mflops_div);
 
     // Test 10: VPU Vector MADD (v4sf)
     printf("--- Test 10: VPU Vec MADD v4sf (%d vecs x %d batches) ---\n", VPU_NUM_VECTORS, vpu_batches);
