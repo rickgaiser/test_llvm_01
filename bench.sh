@@ -16,6 +16,8 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 BUILD_ROOT=$(cd "$HERE/../../../build" && pwd)
 OUT_ROOT=$BUILD_ROOT/bench
 PS2_IP=${PS2_IP:-192.168.1.10}
+# Our own ps2client build (../tools/ps2client), not the one in install/bin
+PS2CLIENT=${PS2CLIENT:-$HERE/../tools/ps2client/bin/ps2client}
 ALL_VARIANTS="gcc upstream pr feature feature-vu0"
 
 export PS2DEV=${PS2DEV:-/home/rgaiser/dev/ps2max/install}
@@ -120,9 +122,11 @@ cmd_run() {
   [ -n "$v" ] || { echo "Usage: $0 run <variant>"; exit 1; }
   local out=$OUT_ROOT/$v
   [ -f "$out/test.elf" ] || { echo "$out/test.elf missing, run: $0 build $v"; exit 1; }
+  [ -x "$PS2CLIENT" ] || { echo "no ps2client at $PS2CLIENT (make -C $HERE/../tools/ps2client)"; exit 1; }
   # ps2client serves host: from its working directory
   cd "$out"
-  timeout 180 ps2client -h "$PS2_IP" -t 15 execee host:test.elf 2>&1 | tr -d '\r' | tee run.log
+  # -e: exit as soon as the test prints its last line
+  timeout 180 "$PS2CLIENT" -h "$PS2_IP" -t 15 -e "=== Test Complete ===" execee host:test.elf 2>&1 | tr -d '\r' | tee run.log
   if grep -q "=== Test Complete ===" run.log; then
     echo "$v: run complete ($out/run.log)"
   else
