@@ -31,9 +31,9 @@ CFLAGS = $(CFLAGS_COMMON) -I$(PS2DEV)/ee/mips64r5900el-ps2-elf/include \
          -ffp-contract=fast -fomit-frame-pointer
 endif
 ifeq ($(SDK),maxsdk)
-# maxsdk (../maxsdk) with picolibc: its compat headers give the few ps2sdk
+# maxsdk (libs/maxsdk) with picolibc: its compat headers give the few ps2sdk
 # calls used here (tamtypes.h, timer.h, kernel.h)
-MAXSDK   ?= $(abspath ../maxsdk)
+MAXSDK   ?= $(abspath ../../../../libs/maxsdk)
 PS2MAX   ?= $(abspath ../../../..)
 MX_OUT   ?= $(PS2MAX)/toolchain/build/maxsdk/clang
 PICOLIBC ?= $(PS2MAX)/toolchain/build/picolibc/install

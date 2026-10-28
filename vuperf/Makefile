@@ -10,7 +10,7 @@ HERE   := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 ROOT   := $(abspath $(HERE)/../../../..)
 LLVM   ?= $(ROOT)/build/llvm/bin
 OUT    ?= $(ROOT)/build/vuperf
-MAXSDK ?= $(abspath $(HERE)/../../maxsdk)
+MAXSDK ?= $(abspath $(HERE)/../../../../../libs/maxsdk)
 MX_OUT ?= $(ROOT)/build/maxsdk/clang
 
 CLANG    = $(LLVM)/clang

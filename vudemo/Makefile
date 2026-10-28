@@ -1,5 +1,5 @@
 # FPU + VU0 + VU1 demo: one polynomial, written in vuk for the VUs and in C
-# for the EE. Built on maxsdk (generic/llvm/maxsdk), no ps2sdk.
+# for the EE. Built on maxsdk (libs/maxsdk), no ps2sdk.
 #
 #   make [D=16] [OUT=<dir>]   -> $(OUT)/vudemo_{macro,micro,all,bench,debug}.elf
 #
@@ -9,7 +9,7 @@ HERE   := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 ROOT   := $(abspath $(HERE)/../../../..)
 LLVM   ?= $(ROOT)/build/llvm/bin
 OUT    ?= $(ROOT)/build/vudemo
-MAXSDK ?= $(abspath $(HERE)/../../maxsdk)
+MAXSDK ?= $(abspath $(HERE)/../../../../../libs/maxsdk)
 MX_OUT ?= $(ROOT)/build/maxsdk/clang
 D      ?= 16
 KERNEL ?= poly4   # poly4.vuk (4 degrees per step) or poly.vuk (plain Horner)
