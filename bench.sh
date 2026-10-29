@@ -8,16 +8,17 @@
 #   ./bench.sh report                 results table from the saved logs
 #
 # Variants: gcc upstream pr feature feature-vu0 (feature with -mvu0)
-# Output:   toolchain/build/bench/<variant>/{*.o,*.s,test.elf,run.log}
+# Output:   build/apps/llvm_bench/<variant>/{*.o,*.s,test.elf,run.log} (ps2max)
 
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-BUILD_ROOT=$(cd "$HERE/../../../build" && pwd)
-OUT_ROOT=$BUILD_ROOT/bench
+PS2MAX=$(cd "$HERE/../.." && pwd)
+BUILD_ROOT=$PS2MAX/build/toolchain/generic/llvm
+OUT_ROOT=$PS2MAX/build/apps/llvm_bench
 PS2_IP=${PS2_IP:-192.168.1.10}
-# Our own ps2client build (../tools/ps2client), not the one in install/bin
-PS2CLIENT=${PS2CLIENT:-$HERE/../tools/ps2client/bin/ps2client}
+# Our own ps2client build (toolchain/generic/llvm/tools/ps2client), not the one in install/bin
+PS2CLIENT=${PS2CLIENT:-$PS2MAX/toolchain/generic/llvm/tools/ps2client/bin/ps2client}
 ALL_VARIANTS="gcc upstream pr feature feature-vu0"
 
 export PS2DEV=${PS2DEV:-/home/rgaiser/dev/ps2max/install}
@@ -26,8 +27,8 @@ export PS2SDK=${PS2SDK:-$PS2DEV/ps2sdk}
 # Build directory of the clang used for a variant
 clang_dir() {
   case "$1" in
-    feature|feature-vu0) echo "$BUILD_ROOT/llvm" ;;
-    pr|upstream) echo "$BUILD_ROOT/llvm-$1" ;;
+    feature|feature-vu0) echo "$BUILD_ROOT/feature" ;;
+    pr|upstream) echo "$BUILD_ROOT/$1" ;;
   esac
 }
 
@@ -122,7 +123,7 @@ cmd_run() {
   [ -n "$v" ] || { echo "Usage: $0 run <variant>"; exit 1; }
   local out=$OUT_ROOT/$v
   [ -f "$out/test.elf" ] || { echo "$out/test.elf missing, run: $0 build $v"; exit 1; }
-  [ -x "$PS2CLIENT" ] || { echo "no ps2client at $PS2CLIENT (make -C $HERE/../tools/ps2client)"; exit 1; }
+  [ -x "$PS2CLIENT" ] || { echo "no ps2client at $PS2CLIENT (make -C $PS2MAX/toolchain/generic/llvm/tools/ps2client)"; exit 1; }
   # ps2client serves host: from its working directory
   cd "$out"
   # -e: exit as soon as the test prints its last line

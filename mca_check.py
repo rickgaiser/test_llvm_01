@@ -17,7 +17,7 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TOP = os.path.normpath(os.path.join(HERE, "../../.."))
+TOP = os.path.normpath(os.path.join(HERE, "../.."))
 
 # The function-like encoding macros.
 R3_OPS = {
@@ -128,8 +128,8 @@ def mca_cycles(mca, asm, reps, iters=100):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mca", default=os.path.join(TOP, "build/llvm/bin/llvm-mca"))
-    ap.add_argument("--log", default=os.path.join(TOP, "build/bench/gcc/run.log"))
+    ap.add_argument("--mca", default=os.path.join(TOP, "build/toolchain/generic/llvm/feature/bin/llvm-mca"))
+    ap.add_argument("--log", default=os.path.join(TOP, "build/apps/llvm_bench/gcc/run.log"))
     ap.add_argument("--table", default="VU0 macro mode")
     ap.add_argument("--src", default=os.path.join(HERE, "uarch_tests.c"))
     ap.add_argument("--tolerance", type=float, default=0.15)

@@ -8,11 +8,11 @@
 # Timings only from the real PS2 (ps2-hw-test skill), never from PCSX2.
 
 HERE   := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-ROOT   := $(abspath $(HERE)/../../../..)
-LLVM   ?= $(ROOT)/build/llvm/bin
-OUT    ?= $(ROOT)/build/vuuarch
-MAXSDK ?= $(abspath $(HERE)/../../../../../libs/maxsdk)
-MX_OUT ?= $(ROOT)/build/maxsdk/clang
+PS2MAX := $(abspath $(HERE)/../../..)
+LLVM   ?= $(PS2MAX)/build/toolchain/generic/llvm/feature/bin
+OUT    ?= $(PS2MAX)/build/apps/llvm_bench/vuuarch
+MAXSDK ?= $(PS2MAX)/libs/maxsdk
+MX_OUT ?= $(PS2MAX)/build/libs/maxsdk
 
 CLANG  = $(LLVM)/clang
 CFLAGS = -Wall -O2 -ffreestanding -I$(MAXSDK)/include -I$(OUT) \

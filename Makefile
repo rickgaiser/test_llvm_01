@@ -33,10 +33,10 @@ endif
 ifeq ($(SDK),maxsdk)
 # maxsdk (libs/maxsdk) with picolibc: its compat headers give the few ps2sdk
 # calls used here (tamtypes.h, timer.h, kernel.h)
-MAXSDK   ?= $(abspath ../../../../libs/maxsdk)
-PS2MAX   ?= $(abspath ../../../..)
-MX_OUT   ?= $(PS2MAX)/toolchain/build/maxsdk/clang
-PICOLIBC ?= $(PS2MAX)/toolchain/build/picolibc/install
+MAXSDK   ?= $(abspath ../../libs/maxsdk)
+PS2MAX   ?= $(abspath ../..)
+MX_OUT   ?= $(PS2MAX)/build/libs/maxsdk
+PICOLIBC ?= $(PS2MAX)/build/libs/picolibc/install
 LLVM     ?= $(dir $(CLANG))
 CFLAGS    = -Wall -O3 -ffast-math -I. -isystem $(PICOLIBC)/include -I$(MAXSDK)/compat/ps2sdk \
             -I$(MAXSDK)/include --target=mips64el -mcpu=r5900 -mabi=n32 -fno-pic -mno-abicalls \
