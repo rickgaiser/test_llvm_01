@@ -8,8 +8,16 @@
 #define STREAM_LINE_INTS 16       // 64-byte cache line
 #define STREAM_PASSES 16
 
+// The _pref kernels prefetch this many cache lines ahead
+#define STREAM_PREF_LINES 4
+
 int stream_sum(const int *in, int count);
 void stream_scale(const int *in, int *out, int count);
 void stream_saxpy(const float *x, float *y, int count, float a);
+
+// The same kernels with __builtin_prefetch (PREF on the EE)
+int stream_sum_pref(const int *in, int count);
+void stream_scale_pref(const int *in, int *out, int count);
+void stream_saxpy_pref(const float *x, float *y, int count, float a);
 
 #endif // STREAM_TESTS_H

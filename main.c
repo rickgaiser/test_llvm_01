@@ -625,6 +625,45 @@ int main() {
     printf("Result: %u\n", check);
     printf("Performance: %.2f MB/s\n\n", mbs_saxpy);
 
+    // The same kernels with __builtin_prefetch, STREAM_PREF_LINES ahead. The
+    // results must match the ones above.
+    t0 = GetTimerSystemTime();
+    for (int p = 0; p < STREAM_PASSES; p++)
+        sum = stream_sum_pref(stream_in, STREAM_INTS);
+    t1 = GetTimerSystemTime();
+    float mbs_sum_pref = stream_mbs(t1 - t0, 4);
+    printf("--- Stream Sum (prefetch) ---\n");
+    printf("Result: %d\n", sum);
+    printf("Performance: %.2f MB/s\n\n", mbs_sum_pref);
+
+    for (int i = 0; i < STREAM_INTS; i++)
+        stream_out[i] = 0;
+    t0 = GetTimerSystemTime();
+    for (int p = 0; p < STREAM_PASSES; p++)
+        stream_scale_pref(stream_in, stream_out, STREAM_INTS);
+    t1 = GetTimerSystemTime();
+    float mbs_scale_pref = stream_mbs(t1 - t0, 8);
+    check = 0;
+    for (int i = 0; i < STREAM_INTS; i++)
+        check += stream_out[i];
+    printf("--- Stream Scale (prefetch) ---\n");
+    printf("Result: %u\n", check);
+    printf("Performance: %.2f MB/s\n\n", mbs_scale_pref);
+
+    for (int i = 0; i < STREAM_INTS; i++)
+        stream_y[i] = 1.0f;
+    t0 = GetTimerSystemTime();
+    for (int p = 0; p < STREAM_PASSES; p++)
+        stream_saxpy_pref(stream_x, stream_y, STREAM_INTS, 0.5f);
+    t1 = GetTimerSystemTime();
+    float mbs_saxpy_pref = stream_mbs(t1 - t0, 12);
+    check = 0;
+    for (int i = 0; i < STREAM_INTS; i++)
+        check += (unsigned int)stream_y[i];
+    printf("--- Stream SAXPY (prefetch) ---\n");
+    printf("Result: %u\n", check);
+    printf("Performance: %.2f MB/s\n\n", mbs_saxpy_pref);
+
     shuffle_checks();
 
     // === Application kernels ===
@@ -662,6 +701,9 @@ int main() {
     print_stream("Sum", mbs_sum);
     print_stream("Scale", mbs_scale);
     print_stream("SAXPY", mbs_saxpy);
+    print_stream("Sum pref", mbs_sum_pref);
+    print_stream("Scale pref", mbs_scale_pref);
+    print_stream("SAXPY pref", mbs_saxpy_pref);
     app_print_summary();
     printf("=== Test Complete ===\n");
 
