@@ -23,6 +23,8 @@ void print_vector(const char *name, float vec[MAT_SIZE]) {
     printf("]\n");
 }
 
+// With BENCH_ASM these kernels are those of asm/fpu_tests.S.
+#ifndef BENCH_ASM
 void matrix_vector_multiply(float (* restrict mat)[MAT_SIZE] ALIGNED16,
                            float * restrict vec ALIGNED16,
                            float * restrict result ALIGNED16) {
@@ -65,6 +67,7 @@ void transform_vector_list(float (* restrict mat)[MAT_SIZE] ALIGNED16,
         }
     }
 }
+#endif // BENCH_ASM
 
 // FPU compare test - tests all comparison operations
 void fpu_compare_test(float a, float b, fpu_cmp_result_t *result) {

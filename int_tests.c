@@ -1,9 +1,11 @@
 #include "int_tests.h"
 
+// With BENCH_ASM the kernels are those of asm/int_tests.S.
+#ifndef BENCH_ASM
+
 void int_scalar_multiply(int * restrict in,
                         int * restrict out,
                         int count, int scalar) {
-    #pragma GCC unroll 4
     for (int i = 0; i < count; i++) {
         out[i] = in[i] * scalar;
     }
@@ -19,7 +21,6 @@ void transform_vector_list_fp(int mat[4][4] ALIGNED16,
     const int m20 = mat[2][0], m21 = mat[2][1], m22 = mat[2][2], m23 = mat[2][3];
     const int m30 = mat[3][0], m31 = mat[3][1], m32 = mat[3][2], m33 = mat[3][3];
 
-    #pragma GCC unroll 4
     for (int v = 0; v < count; v++) {
         // Load input vector
         int v0 = vecs_in[v][0];
@@ -70,7 +71,6 @@ void test_dual_pipeline_madd(unsigned int * restrict data ALIGNED16,
     unsigned int sum0 = 0, sum1 = 0;
 
     // Process 2 elements at a time - allows madd + madd1 dual-issue
-    #pragma GCC unroll 4
     for (int i = 0; i < count; i += 2) {
         unsigned int v0 = data[i];
         unsigned int v1 = data[i+1];
@@ -89,3 +89,5 @@ void int_divide(int * restrict in ALIGNED16, int * restrict out ALIGNED16,
     for (int i = 0; i < count; i++)
         out[i] = in[i] / (((in[i] >> 4) & 7) + 1);
 }
+
+#endif // BENCH_ASM

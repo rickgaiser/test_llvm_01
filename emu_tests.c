@@ -4,7 +4,7 @@
 
 // --- 8-bit CPU interpreter (a subset of the 6502, with its flags) ---
 
-static u8 mem8[4096] __attribute__((aligned(64)));
+KERNEL_DATA u8 mem8[4096] __attribute__((aligned(64)));
 
 // Sums and scrambles 192 bytes of the zero page 16 times
 static const u8 prog8[] = {
@@ -36,6 +36,7 @@ static void init_cpu8(void) {
     mem8[0x08] = 0;
 }
 
+#ifndef BENCH_ASM
 static u32 cpu8(void) {
     u32 a = 0, x = 0, y = 0, c = 0, v = 0, nz = 1, pc = 0x200;
     for (;;) {
@@ -88,11 +89,14 @@ static u32 cpu8(void) {
         pc &= 0xfff;
     }
 }
+#else
+u32 cpu8(void); // asm/emu_tests.S
+#endif
 
 // --- MIPS R3000 (PS1) interpreter, with branch delay slots ---
 
 #define GUEST_WORDS 4096  // 16 KB of guest RAM
-static u32 ram[GUEST_WORDS] __attribute__((aligned(64)));
+KERNEL_DATA u32 ram[GUEST_WORDS] __attribute__((aligned(64)));
 
 #define R(op, rs, rt, rd, sa, fn) \
     ((op) << 26 | (rs) << 21 | (rt) << 16 | (rd) << 11 | (sa) << 6 | (fn))
@@ -131,6 +135,7 @@ static void init_r3000(void) {
         ram[i] = prog_r3000[i];
 }
 
+#ifndef BENCH_ASM
 static u32 r3000(void) {
     u32 r[32] = {0};
     u32 pc = 0, npc = 4;
@@ -167,19 +172,23 @@ static u32 r3000(void) {
         r[0] = 0;
     }
 }
+#else
+u32 r3000(void); // asm/emu_tests.S
+#endif
 
 // --- SNES 4bpp planar tiles to 8bpp ---
 // A tile is 8x8 pixels in 32 bytes: rows of planes 0/1, then of planes 2/3.
 
 #define NUM_TILES 128
-static u8 tiles[NUM_TILES * 32] __attribute__((aligned(64)));
-static u8 chunky[NUM_TILES * 64] __attribute__((aligned(64)));
+KERNEL_DATA u8 tiles[NUM_TILES * 32] __attribute__((aligned(64)));
+KERNEL_DATA u8 chunky[NUM_TILES * 64] __attribute__((aligned(64)));
 
 static void init_tiles(void) {
     for (int i = 0; i < NUM_TILES * 32; i++)
         tiles[i] = app_rand() >> 24;
 }
 
+#ifndef BENCH_ASM
 static u32 tile_decode(void) {
     for (int t = 0; t < NUM_TILES; t++) {
         const u8 *in = &tiles[t * 32];
@@ -197,18 +206,22 @@ static u32 tile_decode(void) {
     }
     return app_hash(chunky, sizeof(chunky));
 }
+#else
+u32 tile_decode(void); // asm/emu_tests.S
+#endif
 
 // --- N64 16-bit big-endian RGBA5551 (red high) to GS PSMCT16 (red low) ---
 
 #define N64_PIXELS 4096
-static u16 n64_tex[N64_PIXELS] __attribute__((aligned(64)));
-static u16 ct16[N64_PIXELS] __attribute__((aligned(64)));
+KERNEL_DATA u16 n64_tex[N64_PIXELS] __attribute__((aligned(64)));
+KERNEL_DATA u16 ct16[N64_PIXELS] __attribute__((aligned(64)));
 
 static void init_n64(void) {
     for (int i = 0; i < N64_PIXELS; i++)
         n64_tex[i] = app_rand() >> 16;
 }
 
+#ifndef BENCH_ASM
 static u32 n64_to_ct16(void) {
     for (int i = 0; i < N64_PIXELS; i++) {
         u32 p = n64_tex[i];
@@ -218,14 +231,17 @@ static u32 n64_to_ct16(void) {
     }
     return app_hash(ct16, sizeof(ct16));
 }
+#else
+u32 n64_to_ct16(void); // asm/emu_tests.S
+#endif
 
 // --- Big-endian guest loads through a page table (4 KB pages) ---
 
 #define GUEST_PAGES 8
 #define GUEST_LOADS 4096
-static u32 host_pages[GUEST_PAGES][1024] __attribute__((aligned(64)));
-static u32 *page_table[GUEST_PAGES];
-static u32 guest_addr[GUEST_LOADS];
+KERNEL_DATA u32 host_pages[GUEST_PAGES][1024] __attribute__((aligned(64)));
+KERNEL_DATA u32 *page_table[GUEST_PAGES];
+KERNEL_DATA u32 guest_addr[GUEST_LOADS];
 
 static void init_guest_mem(void) {
     for (int p = 0; p < GUEST_PAGES; p++) {
@@ -243,6 +259,7 @@ static void init_guest_mem(void) {
     }
 }
 
+#ifndef BENCH_ASM
 static u32 guest_loads(void) {
     u32 sum = 0;
     for (int i = 0; i < GUEST_LOADS; i++) {
@@ -253,6 +270,9 @@ static u32 guest_loads(void) {
     }
     return sum;
 }
+#else
+u32 guest_loads(void); // asm/emu_tests.S
+#endif
 
 static const app_test emu_tests[] = {
     {"6502 Interp", "MIPS", CPU8_INSTRS, init_cpu8, cpu8},

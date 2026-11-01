@@ -8,6 +8,8 @@
 #   ./bench.sh report                 results table from the saved logs
 #
 # Variants: gcc upstream pr feature feature-vu0 (feature with -mvu0)
+#           asm (the hand-written kernels of asm/*.S without VU0, the rest with
+#           feature clang), asm-vu0 (the same with the kernels that use VU0)
 # Output:   build/apps/llvm_bench/<variant>/{*.o,*.s,test.elf,run.log} (ps2max)
 
 set -e
@@ -19,7 +21,7 @@ OUT_ROOT=$PS2MAX/build/apps/llvm_bench
 PS2_IP=${PS2_IP:-192.168.1.10}
 # Our own ps2client build (toolchain/generic/llvm/tools/ps2client), not the one in install/bin
 PS2CLIENT=${PS2CLIENT:-$PS2MAX/toolchain/generic/llvm/tools/ps2client/bin/ps2client}
-ALL_VARIANTS="gcc upstream pr feature feature-vu0"
+ALL_VARIANTS="gcc upstream pr feature feature-vu0 asm asm-vu0"
 
 export PS2DEV=${PS2DEV:-/home/rgaiser/dev/ps2max/install}
 export PS2SDK=${PS2SDK:-$PS2DEV/ps2sdk}
@@ -27,7 +29,7 @@ export PS2SDK=${PS2SDK:-$PS2DEV/ps2sdk}
 # Build directory of the clang used for a variant
 clang_dir() {
   case "$1" in
-    feature|feature-vu0) echo "$BUILD_ROOT/feature" ;;
+    feature|feature-vu0|asm|asm-vu0) echo "$BUILD_ROOT/feature" ;;
     pr|upstream) echo "$BUILD_ROOT/$1" ;;
   esac
 }
@@ -69,6 +71,8 @@ cmd_build() {
       fi
       mkdir -p "$OUT_ROOT"
       make -s -C "$HERE" COMPILER=clang CLANG="$clang" OUT="$out" \
+        BENCH_ASM=$(case "$v" in asm*) echo 1 ;; *) echo 0 ;; esac) \
+        ASM_VU0=$([ "$v" = asm-vu0 ] && echo 1 || echo 0) \
         EXTRA_CFLAGS="$(variant_cflags "$v")" > "$OUT_ROOT/$v.build.log" 2>&1 || true
     fi
     if [ -f "$out/test.elf" ]; then

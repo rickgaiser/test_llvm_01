@@ -5,6 +5,8 @@
 // PS2 memory map: 0x00000000 = cached, 0x20000000 = uncached, 0x30000000 = UCAB
 #define UCAB_ADDR(ptr) ((typeof(ptr))((unsigned int)(ptr) | 0x30000000))
 
+// With BENCH_ASM these kernels are those of asm/vpu_tests.S.
+#ifndef BENCH_ASM
 // Divisions of all four fields: through the FPU and the VU0 divider
 void vpu_vector_divide(v4sf * restrict a ALIGNED16,
                        v4sf * restrict b ALIGNED16,
@@ -19,7 +21,6 @@ void vpu_vector_add(v4sf * restrict a ALIGNED16,
                    v4sf * restrict b ALIGNED16,
                    v4sf * restrict result ALIGNED16,
                    int count) {
-    //#pragma GCC unroll 4
     for (int i = 0; i < count; i++) {
         result[i] = a[i] + b[i];
     }
@@ -29,7 +30,6 @@ void vpu_vector_mul(v4sf * restrict a ALIGNED16,
                    v4sf * restrict b ALIGNED16,
                    v4sf * restrict result ALIGNED16,
                    int count) {
-    //#pragma GCC unroll 4
     for (int i = 0; i < count; i++) {
         result[i] = a[i] * b[i];
     }
@@ -40,82 +40,20 @@ void vpu_vector_madd(v4sf * restrict a ALIGNED16,
                     v4sf * restrict c ALIGNED16,
                     v4sf * restrict result ALIGNED16,
                     int count) {
-    //#pragma GCC unroll 4
     for (int i = 0; i < count; i++) {
         result[i] = a[i] * b[i] + c[i];
     }
 }
 
-// 3-stage software pipeline with 2 vectors in flight:
-//   Stage 1: Load 2 vectors from memory
-//   Stage 2: Compute 2 matrix * vector
-//   Stage 3: Store 2 results to memory
-//
-// Pipeline structure:
-//   Prologue: Load v0,v1 (S1), then Compute v0,v1 (S2) + Load v2,v3 (S1)
-//   Loop:     Store (S3), Compute (S2), Load (S1) - all for different vector pairs
-//   Epilogue: Store + Compute + Store final pairs
+// vecs_out[i] = mat * vecs_in[i], the matrix in columns
 void vpu_matrix_vector_multiply(v4sf mat[4] ALIGNED16,
                                v4sf * restrict vecs_in ALIGNED16,
                                v4sf * restrict vecs_out ALIGNED16,
                                int count) {
-    if (count <= 0) return;
-
-    // Keep matrix in registers
-    v4sf m0 = mat[0], m1 = mat[1], m2 = mat[2], m3 = mat[3];
-
-    // Handle odd count - process first vector separately
-    if (count & 1) {
-        v4sf v = *vecs_in++;
-        *vecs_out++ = m0 * v[0] + m1 * v[1] + m2 * v[2] + m3 * v[3];
-        if (--count == 0) return;
+    for (int i = 0; i < count; i++) {
+        v4sf v = vecs_in[i];
+        vecs_out[i] = mat[0] * v[0] + mat[1] * v[1] + mat[2] * v[2] + mat[3] * v[3];
     }
-
-    // ===== PROLOGUE: prime the pipeline =====
-    // Stage 1: Load first 2 vectors
-    v4sf v0 = *vecs_in++;
-    v4sf v1 = *vecs_in++;
-    count -= 2;
-
-    if (count == 0) {
-        // Only 2 vectors - compute and store directly
-        *vecs_out++ = m0 * v0[0] + m1 * v0[1] + m2 * v0[2] + m3 * v0[3];
-        *vecs_out = m0 * v1[0] + m1 * v1[1] + m2 * v1[2] + m3 * v1[3];
-        return;
-    }
-
-    // Stage 2 + Stage 1: Compute first pair, Load second pair
-    v4sf result0 = m0 * v0[0] + m1 * v0[1] + m2 * v0[2] + m3 * v0[3];
-    v4sf result1 = m0 * v1[0] + m1 * v1[1] + m2 * v1[2] + m3 * v1[3];
-    v0 = *vecs_in++;
-    v1 = *vecs_in++;
-    count -= 2;
-
-    // ===== MAIN LOOP: steady-state 3-stage pipeline =====
-    while (count > 0) {
-        // Stage 3: Store results from 2 iterations ago
-        *vecs_out++ = result0;
-        *vecs_out++ = result1;
-
-        // Stage 2: Compute vectors from 1 iteration ago
-        result0 = m0 * v0[0] + m1 * v0[1] + m2 * v0[2] + m3 * v0[3];
-        result1 = m0 * v1[0] + m1 * v1[1] + m2 * v1[2] + m3 * v1[3];
-
-        // Stage 1: Load next 2 vectors
-        v0 = *vecs_in++;
-        v1 = *vecs_in++;
-
-        count -= 2;
-    }
-
-    // ===== EPILOGUE: drain the pipeline =====
-    // Store results from previous iteration
-    *vecs_out++ = result0;
-    *vecs_out++ = result1;
-
-    // Compute and store final 2 vectors
-    *vecs_out++ = m0 * v0[0] + m1 * v0[1] + m2 * v0[2] + m3 * v0[3];
-    *vecs_out = m0 * v1[0] + m1 * v1[1] + m2 * v1[2] + m3 * v1[3];
 }
 
 void vpu_dot_product(v4sf * restrict a ALIGNED16,
@@ -141,6 +79,8 @@ void vpu_hmax_hmin(v4sf * restrict a ALIGNED16,
         min_out[i] = fminf(fminf(v[0], v[1]), fminf(v[2], v[3]));
     }
 }
+
+#endif // BENCH_ASM
 
 #ifdef __mips_vu0
 // Compute-only benchmark: no loads/stores in loop, measures pure FMAC throughput

@@ -84,7 +84,7 @@ is not known yet.
 ## Usage
 
 ```sh
-./bench.sh build [variant...]   # gcc upstream pr feature feature-vu0 -> build/apps/llvm_bench/<variant>/
+./bench.sh build [variant...]   # gcc upstream pr feature feature-vu0 asm asm-vu0 -> build/apps/llvm_bench/<variant>/
 ./bench.sh codegen              # code size per function per variant
 ./bench.sh run <variant>        # run on the PS2 (192.168.1.10), saves run.log
 ./bench.sh report               # results table from the saved run logs
@@ -92,5 +92,17 @@ is not known yet.
 
 feature-vu0 is the feature clang with `-mvu0`: v4f32 is then a VU0 (COP2) vector type,
 and `__mips_vu0` enables the VU0 inline asm tests.
+
+asm is the target for the compilers: every kernel (all tests but the uarch ones) is
+hand-written in `asm/<file>.S` for `<file>.c`, and the rest is built with the feature clang.
+With `BENCH_ASM` the C files declare those kernels instead of defining them, and their
+data (`KERNEL_DATA`) is visible to the assembly. Each kernel's comment says whether it
+has been optimized, and how; they start naive (a direct translation). asm uses no VU0
+(GPRs, MMI and the FPU); asm-vu0 (`ASM_VU0`) is the same with the kernels that have a VU0
+version, so the two show what VU0 gains per kernel. `asm/TODO.md`
+lists the optimizations to try and the gaps found in the LLVM assembler.
+
+The C kernels are plain loops: no manual unrolling, software pipelining or extra
+accumulators, so that the compilers decide those themselves.
 
 Generated assembly is in `build/apps/llvm_bench/<variant>/*.s` (in ps2max).

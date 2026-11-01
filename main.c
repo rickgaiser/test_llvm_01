@@ -38,36 +38,36 @@
     } while (0)
 
 // FPU test data
-static float mat_a[MAT_SIZE][MAT_SIZE] = {
+static float mat_a[MAT_SIZE][MAT_SIZE] __attribute__((aligned(16))) = {
     {1.0f, 2.0f, 3.0f, 4.0f},
     {5.0f, 6.0f, 7.0f, 8.0f},
     {9.0f, 10.0f, 11.0f, 12.0f},
     {13.0f, 14.0f, 15.0f, 16.0f}
 };
 
-static float mat_b[MAT_SIZE][MAT_SIZE] = {
+static float mat_b[MAT_SIZE][MAT_SIZE] __attribute__((aligned(16))) = {
     {0.5f, 0.1f, 0.0f, 0.0f},
     {0.1f, 0.5f, 0.1f, 0.0f},
     {0.0f, 0.1f, 0.5f, 0.1f},
     {0.0f, 0.0f, 0.1f, 0.5f}
 };
 
-static float vec_in[MAT_SIZE] = {1.0f, 2.0f, 3.0f, 4.0f};
-static float vec_out[MAT_SIZE];
-static float mat_result[MAT_SIZE][MAT_SIZE];
-static float vec_list_in[NUM_VECTORS][MAT_SIZE];
-static float vec_list_out[NUM_VECTORS][MAT_SIZE];
+static float vec_in[MAT_SIZE] __attribute__((aligned(16))) = {1.0f, 2.0f, 3.0f, 4.0f};
+static float vec_out[MAT_SIZE] __attribute__((aligned(16)));
+static float mat_result[MAT_SIZE][MAT_SIZE] __attribute__((aligned(16)));
+static float vec_list_in[NUM_VECTORS][MAT_SIZE] __attribute__((aligned(16)));
+static float vec_list_out[NUM_VECTORS][MAT_SIZE] __attribute__((aligned(16)));
 
 // Integer test data
-static int int_list_in[NUM_INTS];
-static int int_list_out[NUM_INTS];
-static int fp_mat_a[4][4];
-static int fp_vec_list_in[256][4];
-static int fp_vec_list_out[256][4];
+static int int_list_in[NUM_INTS] __attribute__((aligned(16)));
+static int int_list_out[NUM_INTS] __attribute__((aligned(16)));
+static int fp_mat_a[4][4] __attribute__((aligned(16)));
+static int fp_vec_list_in[256][4] __attribute__((aligned(16)));
+static int fp_vec_list_out[256][4] __attribute__((aligned(16)));
 
 // Dual pipeline result arrays
-static unsigned int dual_result[4];
-static unsigned int dual_result2[2];
+static unsigned int dual_result[4] __attribute__((aligned(16)));
+static unsigned int dual_result2[2] __attribute__((aligned(16)));
 
 // VPU test data (aligned for vector operations)
 static v4sf vpu_mat[4] __attribute__((aligned(16)));
@@ -246,6 +246,8 @@ int main() {
     mops3 = ops3 / usec3;
     float cycles_per_8 = (float)ticks3 / ((float)NUM_INTS * int_batches / 8);
 
+    printf("Result: %u %u %u %u\n", dual_result[0], dual_result[1], dual_result[2],
+           dual_result[3]);
     printf("Time: %llu ticks (%.2f us)\n", ticks3, usec3);
     printf("Performance: %.2f MOPS\n", mops3);
     printf("Cycles/8 elements: %.2f (ideal dual-issue = 8)\n\n", cycles_per_8);
@@ -265,6 +267,7 @@ int main() {
     mops4 = ops4 / usec4;
     float cycles_per_4 = (float)ticks4 / ((float)NUM_INTS * int_batches / 4);
 
+    printf("Result: %u %u\n", dual_result2[0], dual_result2[1]);
     printf("Time: %llu ticks (%.2f us)\n", ticks4, usec4);
     printf("Performance: %.2f MOPS\n", mops4);
     printf("Cycles/4 elements: %.2f (ideal dual-issue = 4)\n\n", cycles_per_4);

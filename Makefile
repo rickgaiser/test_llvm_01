@@ -3,6 +3,7 @@
 #   make COMPILER=gcc                         OUT=<dir>
 #   make COMPILER=clang CLANG=<path to clang> OUT=<dir>
 #   make COMPILER=clang SDK=maxsdk OUT=<dir>   on maxsdk + picolibc, no ps2sdk
+#   make COMPILER=clang BENCH_ASM=1 ...         the kernels in asm/*.S instead of C
 #
 # Normally driven by bench.sh.
 
@@ -45,6 +46,18 @@ MX_LIBS   = $(MX_OUT)/libmxc.a $(PICOLIBC)/lib/libc.a $(MX_OUT)/libmx.a $(MX_OUT
 endif
 CFLAGS += $(EXTRA_CFLAGS)
 
+# The hand-written kernels (asm/<file>.S for <file>.c): with BENCH_ASM the C
+# files declare them instead of defining their own. ASM_VU0=1 selects the
+# kernels that use VU0 (asm-vu0) where a kernel has a version with and one
+# without VU0.
+ifeq ($(ASM_VU0),1)
+CFLAGS += -DASM_VU0
+endif
+ifeq ($(BENCH_ASM),1)
+CFLAGS += -DBENCH_ASM
+OBJS   += $(patsubst asm/%.S,$(OUT)/asm_%.o,$(wildcard asm/*.S))
+endif
+
 all: $(BIN) $(ASMS)
 
 ifeq ($(SDK),maxsdk)
@@ -58,6 +71,10 @@ endif
 
 $(OUT)/%.o: %.c *.h | $(OUT)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+# -mvu0 for the VU0 macro instructions of the v4sf kernels
+$(OUT)/asm_%.o: asm/%.S | $(OUT)
+	$(CC) $(CFLAGS) -mvu0 -c $< -o $@
 
 $(OUT)/%.s: %.c *.h | $(OUT)
 	$(CC) $(CFLAGS) -S $< -o $@

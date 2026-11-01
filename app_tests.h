@@ -33,6 +33,14 @@ extern const app_suite emu_suite;    // emulation
 void app_run_all(void);
 void app_print_summary(void);
 
+// The data of the kernels: static, but visible to the hand-written kernels of
+// asm/*.S in the asm variant (BENCH_ASM), which replace the C ones
+#ifdef BENCH_ASM
+#define KERNEL_DATA
+#else
+#define KERNEL_DATA static
+#endif
+
 // FNV-1a over the 32-bit words of p
 u32 app_hash(const void *p, unsigned bytes);
 // Deterministic pseudo-random numbers; app_run_all seeds them for every test

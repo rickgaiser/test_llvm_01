@@ -12,7 +12,7 @@
 // The 8 KB data cache is 2-way with 4 KB per way, so buffers at the same
 // address modulo 4 KB compete for 2 lines. One struct gives every compiler
 // the same layout; the buffers start 1 KB apart modulo 4 KB.
-static struct {
+KERNEL_DATA struct {
     u32 sprite[SPR_PIXELS];          // 0x000
     u32 pad0[256];
     u32 frame[SPR_PIXELS];           // 0x400
@@ -41,6 +41,7 @@ static void init_sprite(void) {
 }
 
 // Blend a sprite over the frame with its alpha (0..255 per channel)
+#ifndef BENCH_ASM
 static u32 alpha_blend(void) {
     for (int i = 0; i < SPR_PIXELS; i++) {
         u32 s = sprite[i], d = frame[i];
@@ -52,6 +53,9 @@ static u32 alpha_blend(void) {
     }
     return app_hash(frame, sizeof(frame));
 }
+#else
+u32 alpha_blend(void); // asm/gfx_tests.S
+#endif
 
 static void init_indexed(void) {
     for (int i = 0; i < 256; i++)
@@ -61,11 +65,15 @@ static void init_indexed(void) {
 }
 
 // Expand an 8-bit indexed (CLUT) image to 32 bits
+#ifndef BENCH_ASM
 static u32 clut8(void) {
     for (int i = 0; i < SPR_PIXELS; i++)
         frame[i] = palette[indexed[i]];
     return app_hash(frame, sizeof(frame));
 }
+#else
+u32 clut8(void); // asm/gfx_tests.S
+#endif
 
 // A quarter of the sprite pixels are the transparent key color
 #define COLOR_KEY 0x00ff00ffu
@@ -79,6 +87,7 @@ static void init_keyed(void) {
 }
 
 // Composite a sprite over the frame except for its transparent key color
+#ifndef BENCH_ASM
 static u32 color_key(void) {
     for (int i = 0; i < SPR_PIXELS; i++) {
         u32 s = sprite[i], d = frame[i];
@@ -86,8 +95,12 @@ static u32 color_key(void) {
     }
     return app_hash(scaled, SPR_PIXELS * sizeof(u32));
 }
+#else
+u32 color_key(void); // asm/gfx_tests.S
+#endif
 
 // Composite the sprite pixels with an alpha of at least 0x40 over the frame
+#ifndef BENCH_ASM
 static u32 alpha_test(void) {
     for (int i = 0; i < SPR_PIXELS; i++) {
         u32 s = sprite[i], d = frame[i];
@@ -95,8 +108,12 @@ static u32 alpha_test(void) {
     }
     return app_hash(scaled, SPR_PIXELS * sizeof(u32));
 }
+#else
+u32 alpha_test(void); // asm/gfx_tests.S
+#endif
 
 // Convert 32-bit pixels to the 16-bit GS PSMCT16 format (RGBA5551)
+#ifndef BENCH_ASM
 static u32 to_ct16(void) {
     for (int i = 0; i < SPR_PIXELS; i++) {
         u32 p = sprite[i];
@@ -105,9 +122,13 @@ static u32 to_ct16(void) {
     }
     return app_hash(frame16, sizeof(frame16));
 }
+#else
+u32 to_ct16(void); // asm/gfx_tests.S
+#endif
 
 
 // Scale the sprite to 96x96 with nearest neighbor, 16.16 fixed-point steps
+#ifndef BENCH_ASM
 static u32 scale_nn(void) {
     u32 step = (SPR_W << 16) / SCALED_W;
     u32 sy = 0;
@@ -120,6 +141,9 @@ static u32 scale_nn(void) {
     }
     return app_hash(scaled, sizeof(scaled));
 }
+#else
+u32 scale_nn(void); // asm/gfx_tests.S
+#endif
 
 static const app_test gfx_tests[] = {
     {"Alpha Blend", "Mpix/s", SPR_PIXELS, init_sprite, alpha_blend},
@@ -148,7 +172,7 @@ typedef struct {
 // One struct gives every compiler the same layout (as gfx_mem): the arrays
 // that a test reads and writes together start at different addresses modulo
 // 4 KB, so they do not compete for the 2 ways of the data cache.
-static struct {
+KERNEL_DATA struct {
     vec4 verts[NUM_VERTS];               // 0x0000 (mod 4 KB 0x000)
     u32 pad0[256];
     vec4 normals[NUM_VERTS];             // 0x2400 (0x400)
@@ -175,7 +199,7 @@ static struct {
 #define colors geom_mem.colors
 #define face_normals_v geom_mem.face_normals_v
 #define visible geom_mem.visible
-static vec4 matrix[3];
+KERNEL_DATA vec4 matrix[3];
 // A model-view matrix in memory, rows of the struct form: not a static, so
 // it is not folded into the code
 vec4 geom_model_view[4];
@@ -204,6 +228,7 @@ static void init_geom(void) {
 
 // Transform to clip space, divide by w and map to the 4096x4096 GS window
 // centered at 2048, in 12.4 fixed point
+#ifndef BENCH_ASM
 static u32 transform(void) {
     for (int i = 0; i < NUM_VERTS; i++) {
         vec4 v = verts[i];
@@ -223,6 +248,9 @@ static u32 transform(void) {
     }
     return app_hash(screen, sizeof(screen));
 }
+#else
+u32 transform(void); // asm/gfx_tests.S
+#endif
 
 static void init_mxv(void) {
     init_geom();
@@ -233,6 +261,7 @@ static void init_mxv(void) {
 
 // A 4x4 matrix times each vertex, with the matrix in rows (each output is
 // the dot product of a row with the vertex)
+#ifndef BENCH_ASM
 static void __attribute__((noinline))
 mxv_row4(const vec4 *restrict m, const vec4 *restrict in, vec4 *restrict out,
          int n) {
@@ -244,9 +273,13 @@ mxv_row4(const vec4 *restrict m, const vec4 *restrict in, vec4 *restrict out,
         out[i].w = m[3].x * v.x + m[3].y * v.y + m[3].z * v.z + m[3].w * v.w;
     }
 }
+#else
+void mxv_row4(const vec4 *restrict m, const vec4 *restrict in, vec4 *restrict out, int n); // asm/gfx_tests.S
+#endif
 
 // The same with the matrix in columns (the output is the sum of the columns
 // scaled by the lanes of the vertex)
+#ifndef BENCH_ASM
 static void __attribute__((noinline))
 mxv_col4(const vec4 *restrict m, const vec4 *restrict in, vec4 *restrict out,
          int n) {
@@ -258,8 +291,12 @@ mxv_col4(const vec4 *restrict m, const vec4 *restrict in, vec4 *restrict out,
         out[i].w = m[0].w * v.x + m[1].w * v.y + m[2].w * v.z + m[3].w * v.w;
     }
 }
+#else
+void mxv_col4(const vec4 *restrict m, const vec4 *restrict in, vec4 *restrict out, int n); // asm/gfx_tests.S
+#endif
 
 // An affine 3x4 matrix in rows (translation in w) to 12.4 fixed point
+#ifndef BENCH_ASM
 static void __attribute__((noinline))
 mxv_row3(const vec4 *restrict m, const vec4 *restrict in, int n) {
     for (int i = 0; i < n; i++) {
@@ -272,8 +309,12 @@ mxv_row3(const vec4 *restrict m, const vec4 *restrict in, int n) {
         screen[i].z = (int)(z * 16.0f);
     }
 }
+#else
+void mxv_row3(const vec4 *restrict m, const vec4 *restrict in, int n); // asm/gfx_tests.S
+#endif
 
 // The same with the matrix in columns (translation in column 3)
+#ifndef BENCH_ASM
 static void __attribute__((noinline))
 mxv_col3(const vec4 *restrict m, const vec4 *restrict in, int n) {
     for (int i = 0; i < n; i++) {
@@ -286,6 +327,9 @@ mxv_col3(const vec4 *restrict m, const vec4 *restrict in, int n) {
         screen[i].z = (int)(z * 16.0f);
     }
 }
+#else
+void mxv_col3(const vec4 *restrict m, const vec4 *restrict in, int n); // asm/gfx_tests.S
+#endif
 
 static u32 mxv_row_4x4(void) {
     mxv_row4(geom_model_view, verts, xformed, NUM_VERTS);
@@ -309,6 +353,7 @@ static u32 mxv_col_3x4(void) {
 
 // Diffuse lighting with an ambient term and 3 directional lights, to a GS
 // vertex color (0x80 = 1.0)
+#ifndef BENCH_ASM
 static u32 lighting(void) {
     static const vec4 dir[3] = {{0.5f, 0.5f, -0.5f, 0.0f},
                                 {-0.75f, 0.25f, 0.0f, 0.0f},
@@ -338,6 +383,9 @@ static u32 lighting(void) {
     }
     return app_hash(colors, sizeof(colors));
 }
+#else
+u32 lighting(void); // asm/gfx_tests.S
+#endif
 
 static void init_cull(void) {
     init_geom();
@@ -346,6 +394,7 @@ static void init_cull(void) {
 
 // Keep the counter-clockwise triangles of a strip, by the sign of the 2D
 // cross product of their 12.4 fixed-point screen positions
+#ifndef BENCH_ASM
 static u32 backface_cull(void) {
     int n = 0;
     for (int i = 0; i < NUM_TRIS; i++) {
@@ -360,11 +409,15 @@ static u32 backface_cull(void) {
     }
     return app_hash(visible, n * 2) ^ n;
 }
+#else
+u32 backface_cull(void); // asm/gfx_tests.S
+#endif
 
 // Face normals of the triangles of a strip: the cross product of two edges.
 // The coordinates are small whole numbers and powers of two, so the results
 // are exact.
 
+#ifndef BENCH_ASM
 static u32 face_normal(void) {
     for (int i = 0; i < NUM_TRIS; i++) {
         vec4 a = verts[i], b = verts[i + 1], c = verts[i + 2];
@@ -375,10 +428,14 @@ static u32 face_normal(void) {
     }
     return app_hash(face_normals, NUM_TRIS * sizeof(vec4));
 }
+#else
+u32 face_normal(void); // asm/gfx_tests.S
+#endif
 
 // The same with vector types, as VU0 code is often written: the edges are
 // vector subtracts and the cross product is two shuffles of each.
 
+#ifndef BENCH_ASM
 static u32 face_normal_v4sf(void) {
     const v4sf_alias *v = (const v4sf_alias *)verts;
     for (int i = 0; i < NUM_TRIS; i++) {
@@ -392,9 +449,13 @@ static u32 face_normal_v4sf(void) {
     }
     return app_hash(face_normals_v, NUM_TRIS * sizeof(v4sf_alias));
 }
+#else
+u32 face_normal_v4sf(void); // asm/gfx_tests.S
+#endif
 
 // Lighting with vector types: the dot product is a lane sum, and its maximum
 // with 0, scaled by the light's intensity (w), scales the light's color.
+#ifndef BENCH_ASM
 static u32 lighting_v4sf(void) {
     static const v4sf_alias dir[3] = {{0.5f, 0.5f, -0.5f, 1.0f},
                                       {-0.75f, 0.25f, 0.0f, 0.5f},
@@ -418,10 +479,14 @@ static u32 lighting_v4sf(void) {
     }
     return app_hash(colors, sizeof(colors));
 }
+#else
+u32 lighting_v4sf(void); // asm/gfx_tests.S
+#endif
 
 // A vector scaled by the product of fields of two others, such as a color by
 // a light's intensity and a material's factor: v * (a.y * b.z).
 
+#ifndef BENCH_ASM
 static u32 field_scale_v4sf(void) {
     const v4sf_alias *v = (const v4sf_alias *)verts;
     const v4sf_alias *n = (const v4sf_alias *)normals;
@@ -429,9 +494,13 @@ static u32 field_scale_v4sf(void) {
         scaled_v[i] = n[i] * (v[i][1] * n[i][2]);
     return app_hash(scaled_v, sizeof(scaled_v));
 }
+#else
+u32 field_scale_v4sf(void); // asm/gfx_tests.S
+#endif
 
 // A vector offset by the product of fields of two others, broadcast by
 // shuffles: n + v.y * n.z.
+#ifndef BENCH_ASM
 static u32 field_scale_bc_v4sf(void) {
     const v4sf_alias *v = (const v4sf_alias *)verts;
     const v4sf_alias *n = (const v4sf_alias *)normals;
@@ -440,22 +509,30 @@ static u32 field_scale_bc_v4sf(void) {
                                  __builtin_shufflevector(n[i], n[i], 2, 2, 2, 2);
     return app_hash(scaled_v, sizeof(scaled_v));
 }
+#else
+u32 field_scale_bc_v4sf(void); // asm/gfx_tests.S
+#endif
 
 // A perspective divide with vector types: v / v.z (a power of two, exact).
+#ifndef BENCH_ASM
 static u32 project_v4sf(void) {
     const v4sf_alias *v = (const v4sf_alias *)verts;
     for (int i = 0; i < NUM_VERTS; i++)
         scaled_v[i] = v[i] * (1.0f / v[i][2]);
     return app_hash(scaled_v, sizeof(scaled_v));
 }
+#else
+u32 project_v4sf(void); // asm/gfx_tests.S
+#endif
 
 // The sum of the vertices of each group weighted by their normals, as for
 // the moments of a mesh: v4sf sums that a loop carries. The group length is
 // in memory, so the loop is not unrolled away.
 #define NUM_GROUPS (NUM_VERTS / 32)
 int geom_group_len = 32;
-static v4sf_alias group_sum[NUM_GROUPS];
+KERNEL_DATA v4sf_alias group_sum[NUM_GROUPS];
 
+#ifndef BENCH_ASM
 static u32 weighted_sum_v4sf(void) {
     const v4sf_alias *v = (const v4sf_alias *)verts;
     const v4sf_alias *n = (const v4sf_alias *)normals;
@@ -468,11 +545,14 @@ static u32 weighted_sum_v4sf(void) {
     }
     return app_hash(group_sum, sizeof(group_sum));
 }
+#else
+u32 weighted_sum_v4sf(void); // asm/gfx_tests.S
+#endif
 
 // Bounding spheres against the 6 planes of a view frustum
 #define NUM_SPHERES 1024
-static vec4 spheres[NUM_SPHERES];  // center, radius
-static u8 sphere_visible[NUM_SPHERES];
+KERNEL_DATA vec4 spheres[NUM_SPHERES];  // center, radius
+KERNEL_DATA u8 sphere_visible[NUM_SPHERES];
 
 static void init_spheres(void) {
     for (int i = 0; i < NUM_SPHERES; i++)
@@ -482,6 +562,7 @@ static void init_spheres(void) {
                             (float)(app_rand() >> 28)};
 }
 
+#ifndef BENCH_ASM
 static u32 frustum_cull(void) {
     static const vec4 planes[6] = {
         {0.75f, 0.0f, 0.5f, 0.0f},   {-0.75f, 0.0f, 0.5f, 0.0f},
@@ -504,6 +585,9 @@ static u32 frustum_cull(void) {
     }
     return app_hash(sphere_visible, sizeof(sphere_visible)) ^ count;
 }
+#else
+u32 frustum_cull(void); // asm/gfx_tests.S
+#endif
 
 static const app_test geom_tests[] = {
     {"Transform", "Mvert/s", NUM_VERTS, init_geom, transform},

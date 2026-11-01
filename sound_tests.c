@@ -1,17 +1,19 @@
 // Sound processing kernels on 16-bit PCM, as for the SPU2.
 #include "app_tests.h"
 
+#ifndef BENCH_ASM
 static inline s16 sat16(s32 v) {
     return v > 32767 ? 32767 : v < -32768 ? -32768 : v;
 }
+#endif
 
 // --- Software mixer: 8 voices with a Q15 left and right volume ---
 
 #define NUM_VOICES 8
 #define MIX_FRAMES 256
-static s16 voice_pcm[NUM_VOICES][MIX_FRAMES] __attribute__((aligned(64)));
-static s16 voice_vol[NUM_VOICES][2];
-static s16 mix_out[MIX_FRAMES * 2] __attribute__((aligned(64)));
+KERNEL_DATA s16 voice_pcm[NUM_VOICES][MIX_FRAMES] __attribute__((aligned(64)));
+KERNEL_DATA s16 voice_vol[NUM_VOICES][2];
+KERNEL_DATA s16 mix_out[MIX_FRAMES * 2] __attribute__((aligned(64)));
 
 static void init_mix(void) {
     for (int v = 0; v < NUM_VOICES; v++) {
@@ -22,6 +24,7 @@ static void init_mix(void) {
     }
 }
 
+#ifndef BENCH_ASM
 static u32 mix(void) {
     for (int i = 0; i < MIX_FRAMES; i++) {
         s32 l = 0, r = 0;
@@ -35,14 +38,17 @@ static u32 mix(void) {
     }
     return app_hash(mix_out, sizeof(mix_out));
 }
+#else
+u32 mix(void); // asm/sound_tests.S
+#endif
 
 // --- PS-ADPCM (VAG) decoding ---
 // A block is 16 bytes: shift and filter, flags, then 28 4-bit samples.
 
 #define ADPCM_BLOCKS 64
 #define ADPCM_SAMPLES (ADPCM_BLOCKS * 28)
-static u8 adpcm[ADPCM_BLOCKS * 16] __attribute__((aligned(64)));
-static s16 pcm[ADPCM_SAMPLES] __attribute__((aligned(64)));
+KERNEL_DATA u8 adpcm[ADPCM_BLOCKS * 16] __attribute__((aligned(64)));
+KERNEL_DATA s16 pcm[ADPCM_SAMPLES] __attribute__((aligned(64)));
 
 static void init_adpcm(void) {
     for (int b = 0; b < ADPCM_BLOCKS; b++) {
@@ -53,6 +59,7 @@ static void init_adpcm(void) {
     }
 }
 
+#ifndef BENCH_ASM
 static u32 adpcm_decode(void) {
     static const s32 coef[5][2] = {
         {0, 0}, {60, 0}, {115, -52}, {98, -55}, {122, -60}};
@@ -74,14 +81,17 @@ static u32 adpcm_decode(void) {
     }
     return app_hash(pcm, sizeof(pcm));
 }
+#else
+u32 adpcm_decode(void); // asm/sound_tests.S
+#endif
 
 // --- 32-tap FIR filter, Q15 ---
 
 #define FIR_TAPS 32
 #define FIR_SAMPLES 512
-static s16 fir_in[FIR_SAMPLES + FIR_TAPS] __attribute__((aligned(64)));
-static s16 fir_coef[FIR_TAPS] __attribute__((aligned(64)));
-static s16 fir_out[FIR_SAMPLES] __attribute__((aligned(64)));
+KERNEL_DATA s16 fir_in[FIR_SAMPLES + FIR_TAPS] __attribute__((aligned(64)));
+KERNEL_DATA s16 fir_coef[FIR_TAPS] __attribute__((aligned(64)));
+KERNEL_DATA s16 fir_out[FIR_SAMPLES] __attribute__((aligned(64)));
 
 static void init_fir(void) {
     for (int i = 0; i < FIR_SAMPLES + FIR_TAPS; i++)
@@ -91,6 +101,7 @@ static void init_fir(void) {
         fir_coef[k] = (s16)(app_rand() >> 16) >> 5;
 }
 
+#ifndef BENCH_ASM
 static u32 fir(void) {
     for (int i = 0; i < FIR_SAMPLES; i++) {
         s32 acc = 1 << 14;
@@ -100,19 +111,23 @@ static u32 fir(void) {
     }
     return app_hash(fir_out, sizeof(fir_out));
 }
+#else
+u32 fir(void); // asm/sound_tests.S
+#endif
 
 // --- Linear interpolation resampling, 44.1 kHz to 48 kHz ---
 
 #define RESAMPLE_OUT 1024
 #define RESAMPLE_IN 1024
-static s16 rs_in[RESAMPLE_IN] __attribute__((aligned(64)));
-static s16 rs_out[RESAMPLE_OUT] __attribute__((aligned(64)));
+KERNEL_DATA s16 rs_in[RESAMPLE_IN] __attribute__((aligned(64)));
+KERNEL_DATA s16 rs_out[RESAMPLE_OUT] __attribute__((aligned(64)));
 
 static void init_resample(void) {
     for (int i = 0; i < RESAMPLE_IN; i++)
         rs_in[i] = app_rand() >> 16;
 }
 
+#ifndef BENCH_ASM
 static u32 resample(void) {
     u32 step = (44100u << 16) / 48000u, pos = 0;
     for (int i = 0; i < RESAMPLE_OUT; i++, pos += step) {
@@ -123,14 +138,17 @@ static u32 resample(void) {
     }
     return app_hash(rs_out, sizeof(rs_out));
 }
+#else
+u32 resample(void); // asm/sound_tests.S
+#endif
 
 // --- Autocorrelation, Q15: the sums of products of a signal with itself
 // shifted by 0-31 samples, as for pitch detection ---
 
 #define CORR_N 512
 #define CORR_LAGS 32
-static s16 corr_in[CORR_N + CORR_LAGS] __attribute__((aligned(64)));
-static s32 corr_out[CORR_LAGS] __attribute__((aligned(64)));
+KERNEL_DATA s16 corr_in[CORR_N + CORR_LAGS] __attribute__((aligned(64)));
+KERNEL_DATA s32 corr_out[CORR_LAGS] __attribute__((aligned(64)));
 
 static void init_corr(void) {
     // 11-bit samples: a sum of 512 products fits in 31 bits
@@ -138,6 +156,7 @@ static void init_corr(void) {
         corr_in[i] = (s16)(app_rand() >> 16) >> 5;
 }
 
+#ifndef BENCH_ASM
 static u32 correlate(void) {
     for (int lag = 0; lag < CORR_LAGS; lag++) {
         s32 acc = 0;
@@ -147,13 +166,16 @@ static u32 correlate(void) {
     }
     return app_hash(corr_out, sizeof(corr_out));
 }
+#else
+u32 correlate(void); // asm/sound_tests.S
+#endif
 
 // --- Energy of blocks of float samples (sums of squares) ---
 
 #define ENERGY_N 4096
 #define ENERGY_BLOCK 256
-static float energy_in[ENERGY_N] __attribute__((aligned(64)));
-static float energy_out[ENERGY_N / ENERGY_BLOCK] __attribute__((aligned(64)));
+KERNEL_DATA float energy_in[ENERGY_N] __attribute__((aligned(64)));
+KERNEL_DATA float energy_out[ENERGY_N / ENERGY_BLOCK] __attribute__((aligned(64)));
 
 static void init_energy(void) {
     // Multiples of 1/16 below 8: the squares and their sums stay exact
@@ -161,6 +183,7 @@ static void init_energy(void) {
         energy_in[i] = (float)((int)(app_rand() >> 24) - 128) / 16.0f;
 }
 
+#ifndef BENCH_ASM
 static u32 energy(void) {
     for (int b = 0; b < ENERGY_N / ENERGY_BLOCK; b++) {
         const float *x = &energy_in[b * ENERGY_BLOCK];
@@ -171,6 +194,9 @@ static u32 energy(void) {
     }
     return app_hash(energy_out, sizeof(energy_out));
 }
+#else
+u32 energy(void); // asm/sound_tests.S
+#endif
 
 static const app_test sound_tests[] = {
     {"Mix 8 Voices", "Msmp/s", NUM_VOICES * MIX_FRAMES, init_mix, mix},
