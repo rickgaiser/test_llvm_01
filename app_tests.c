@@ -6,7 +6,8 @@
 #define MIN_CYCLES 30000000u
 
 static const app_suite *const suites[] = {&gfx_suite, &geom_suite,
-                                          &sound_suite, &emu_suite};
+                                          &sound_suite, &emu_suite,
+                                          &game_suite};
 #define NUM_SUITES (sizeof(suites) / sizeof(suites[0]))
 #define MAX_TESTS 16
 

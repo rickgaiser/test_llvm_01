@@ -29,6 +29,7 @@ extern const app_suite gfx_suite;    // 2D graphics
 extern const app_suite geom_suite;   // 3D geometry
 extern const app_suite sound_suite;  // sound processing
 extern const app_suite emu_suite;    // emulation
+extern const app_suite game_suite;   // game loops (ps2-llvm-benchmarks)
 
 void app_run_all(void);
 void app_print_summary(void);

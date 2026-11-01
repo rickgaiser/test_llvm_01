@@ -7,7 +7,8 @@
 #   ./bench.sh run     <variant>      run on the PS2 and save the log (PS2 must be freshly booted)
 #   ./bench.sh report                 results table from the saved logs
 #
-# Variants: gcc upstream pr feature feature-vu0 (feature with -mvu0)
+# Variants: gcc upstream pr feature feature-vu0 (feature with -mvu0),
+#           tws (the clang of the wt/tws worktree, not in the default list)
 #           asm (the hand-written kernels of asm/*.S without VU0, the rest with
 #           feature clang), asm-vu0 (the same with the kernels that use VU0)
 # Output:   build/apps/llvm_bench/<variant>/{*.o,*.s,test.elf,run.log} (ps2max)
@@ -30,7 +31,7 @@ export PS2SDK=${PS2SDK:-$PS2DEV/ps2sdk}
 clang_dir() {
   case "$1" in
     feature|feature-vu0|asm|asm-vu0) echo "$BUILD_ROOT/feature" ;;
-    pr|upstream) echo "$BUILD_ROOT/$1" ;;
+    pr|upstream|tws) echo "$BUILD_ROOT/$1" ;;
   esac
 }
 
