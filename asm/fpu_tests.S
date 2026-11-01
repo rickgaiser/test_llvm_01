@@ -138,48 +138,49 @@ transform_vector_list:
 # matrix_vector_multiply(mat $4, vec $5, result $6):
 #   result[i] = sum over j of mat[i][j] * vec[j]
 # Optimized (FPU): each row a chain through ACC (mula.s, madda.s, madd.s:
-# 1 cycle per step), in the order of the C sum; the loads of a row come
-# before its chain (lwc1 does not pair with an FPU operation).
+# 1 cycle per step) in the order of the C sum, ordered by asm/gen/sched.py.
+# The bound is the COP1 slot: 20 lwc1, 16 FPU operations, 4 swc1 (model:
+# 41 cycles).
 	.p2align 3
 	.globl	matrix_vector_multiply
 	.ent	matrix_vector_multiply
 matrix_vector_multiply:
-	lwc1	$f12, 0($5)
-	lwc1	$f13, 4($5)
-	lwc1	$f14, 8($5)
-	lwc1	$f15, 12($5)
+	lwc1	$f16, 0($5)
 	lwc1	$f0, 0($4)
+	lwc1	$f17, 4($5)
 	lwc1	$f1, 4($4)
+	lwc1	$f18, 8($5)
 	lwc1	$f2, 8($4)
+	mula.s	$f0, $f16
+	lwc1	$f19, 12($5)
 	lwc1	$f3, 12($4)
-	mula.s	$f0, $f12
-	madda.s	$f1, $f13
-	madda.s	$f2, $f14
-	madd.s	$f21, $f3, $f15
+	madda.s	$f1, $f17
+	madda.s	$f2, $f18
+	madd.s	$f21, $f3, $f19
 	lwc1	$f4, 16($4)
 	lwc1	$f5, 20($4)
 	lwc1	$f6, 24($4)
+	mula.s	$f4, $f16
 	lwc1	$f7, 28($4)
-	mula.s	$f4, $f12
-	madda.s	$f5, $f13
-	madda.s	$f6, $f14
-	madd.s	$f23, $f7, $f15
-	lwc1	$f0, 32($4)
-	lwc1	$f1, 36($4)
-	lwc1	$f2, 40($4)
-	lwc1	$f3, 44($4)
-	mula.s	$f0, $f12
-	madda.s	$f1, $f13
-	madda.s	$f2, $f14
-	madd.s	$f25, $f3, $f15
-	lwc1	$f4, 48($4)
-	lwc1	$f5, 52($4)
-	lwc1	$f6, 56($4)
-	lwc1	$f7, 60($4)
-	mula.s	$f4, $f12
-	madda.s	$f5, $f13
-	madda.s	$f6, $f14
-	madd.s	$f27, $f7, $f15
+	madda.s	$f5, $f17
+	madda.s	$f6, $f18
+	madd.s	$f23, $f7, $f19
+	lwc1	$f8, 32($4)
+	lwc1	$f9, 36($4)
+	lwc1	$f10, 40($4)
+	mula.s	$f8, $f16
+	lwc1	$f11, 44($4)
+	madda.s	$f9, $f17
+	madda.s	$f10, $f18
+	madd.s	$f25, $f11, $f19
+	lwc1	$f12, 48($4)
+	lwc1	$f13, 52($4)
+	lwc1	$f14, 56($4)
+	mula.s	$f12, $f16
+	lwc1	$f15, 60($4)
+	madda.s	$f13, $f17
+	madda.s	$f14, $f18
+	madd.s	$f27, $f15, $f19
 	swc1	$f21, 0($6)
 	swc1	$f23, 4($6)
 	swc1	$f25, 8($6)
@@ -190,118 +191,119 @@ matrix_vector_multiply:
 
 # matrix_matrix_multiply(a $4, b $5, result $6):
 #   result[i][j] = sum over k of a[i][k] * b[k][j]
-# Optimized (FPU): b in $f0-$f15, a row of a in $f16-$f19; each result a
-# chain through ACC in the order of the C sum.
+# Optimized (FPU): b in $f0-$f15; each result a chain through ACC in the
+# order of the C sum, ordered by asm/gen/sched.py. The bound is the COP1
+# slot: 32 lwc1, 64 FPU operations, 16 swc1 (model: 113 cycles).
 	.p2align 3
 	.globl	matrix_matrix_multiply
 	.ent	matrix_matrix_multiply
 matrix_matrix_multiply:
 	lwc1	$f0, 0($5)
-	lwc1	$f1, 4($5)
-	lwc1	$f2, 8($5)
-	lwc1	$f3, 12($5)
-	lwc1	$f4, 16($5)
-	lwc1	$f5, 20($5)
-	lwc1	$f6, 24($5)
-	lwc1	$f7, 28($5)
-	lwc1	$f8, 32($5)
-	lwc1	$f9, 36($5)
-	lwc1	$f10, 40($5)
-	lwc1	$f11, 44($5)
-	lwc1	$f12, 48($5)
-	lwc1	$f13, 52($5)
-	lwc1	$f14, 56($5)
-	lwc1	$f15, 60($5)
 	lwc1	$f16, 0($4)
+	lwc1	$f4, 16($5)
 	lwc1	$f17, 4($4)
+	lwc1	$f8, 32($5)
 	lwc1	$f18, 8($4)
-	lwc1	$f19, 12($4)
 	mula.s	$f16, $f0
+	lwc1	$f12, 48($5)
+	lwc1	$f19, 12($4)
 	madda.s	$f17, $f4
 	madda.s	$f18, $f8
 	madd.s	$f21, $f19, $f12
+	lwc1	$f1, 4($5)
+	lwc1	$f5, 20($5)
+	lwc1	$f9, 36($5)
 	mula.s	$f16, $f1
+	lwc1	$f13, 52($5)
 	madda.s	$f17, $f5
 	madda.s	$f18, $f9
 	madd.s	$f23, $f19, $f13
+	lwc1	$f2, 8($5)
+	lwc1	$f6, 24($5)
+	lwc1	$f10, 40($5)
 	mula.s	$f16, $f2
+	lwc1	$f14, 56($5)
 	madda.s	$f17, $f6
 	madda.s	$f18, $f10
 	madd.s	$f25, $f19, $f14
+	lwc1	$f3, 12($5)
+	lwc1	$f7, 28($5)
+	lwc1	$f11, 44($5)
 	mula.s	$f16, $f3
+	lwc1	$f15, 60($5)
 	madda.s	$f17, $f7
 	madda.s	$f18, $f11
 	madd.s	$f27, $f19, $f15
-	swc1	$f21, 0($6)
-	swc1	$f23, 4($6)
-	swc1	$f25, 8($6)
-	swc1	$f27, 12($6)
 	lwc1	$f16, 16($4)
 	lwc1	$f17, 20($4)
 	lwc1	$f18, 24($4)
-	lwc1	$f19, 28($4)
 	mula.s	$f16, $f0
+	lwc1	$f19, 28($4)
 	madda.s	$f17, $f4
+	swc1	$f21, 0($6)
 	madda.s	$f18, $f8
 	madd.s	$f21, $f19, $f12
 	mula.s	$f16, $f1
 	madda.s	$f17, $f5
+	swc1	$f23, 4($6)
 	madda.s	$f18, $f9
 	madd.s	$f23, $f19, $f13
 	mula.s	$f16, $f2
 	madda.s	$f17, $f6
+	swc1	$f25, 8($6)
 	madda.s	$f18, $f10
 	madd.s	$f25, $f19, $f14
 	mula.s	$f16, $f3
 	madda.s	$f17, $f7
+	swc1	$f27, 12($6)
 	madda.s	$f18, $f11
 	madd.s	$f27, $f19, $f15
-	swc1	$f21, 16($6)
-	swc1	$f23, 20($6)
-	swc1	$f25, 24($6)
-	swc1	$f27, 28($6)
 	lwc1	$f16, 32($4)
 	lwc1	$f17, 36($4)
 	lwc1	$f18, 40($4)
-	lwc1	$f19, 44($4)
 	mula.s	$f16, $f0
+	lwc1	$f19, 44($4)
 	madda.s	$f17, $f4
+	swc1	$f21, 16($6)
 	madda.s	$f18, $f8
 	madd.s	$f21, $f19, $f12
 	mula.s	$f16, $f1
 	madda.s	$f17, $f5
+	swc1	$f23, 20($6)
 	madda.s	$f18, $f9
 	madd.s	$f23, $f19, $f13
 	mula.s	$f16, $f2
 	madda.s	$f17, $f6
+	swc1	$f25, 24($6)
 	madda.s	$f18, $f10
 	madd.s	$f25, $f19, $f14
 	mula.s	$f16, $f3
 	madda.s	$f17, $f7
+	swc1	$f27, 28($6)
 	madda.s	$f18, $f11
 	madd.s	$f27, $f19, $f15
-	swc1	$f21, 32($6)
-	swc1	$f23, 36($6)
-	swc1	$f25, 40($6)
-	swc1	$f27, 44($6)
 	lwc1	$f16, 48($4)
 	lwc1	$f17, 52($4)
 	lwc1	$f18, 56($4)
-	lwc1	$f19, 60($4)
 	mula.s	$f16, $f0
+	lwc1	$f19, 60($4)
 	madda.s	$f17, $f4
+	swc1	$f21, 32($6)
 	madda.s	$f18, $f8
 	madd.s	$f21, $f19, $f12
 	mula.s	$f16, $f1
 	madda.s	$f17, $f5
+	swc1	$f23, 36($6)
 	madda.s	$f18, $f9
 	madd.s	$f23, $f19, $f13
 	mula.s	$f16, $f2
 	madda.s	$f17, $f6
+	swc1	$f25, 40($6)
 	madda.s	$f18, $f10
 	madd.s	$f25, $f19, $f14
 	mula.s	$f16, $f3
 	madda.s	$f17, $f7
+	swc1	$f27, 44($6)
 	madda.s	$f18, $f11
 	madd.s	$f27, $f19, $f15
 	swc1	$f21, 48($6)
@@ -314,8 +316,10 @@ matrix_matrix_multiply:
 
 # transform_vector_list(mat $4, in $5, out $6, count $7):
 #   out[v][i] = sum over j of mat[i][j] * in[v][j]
-# Optimized (FPU): the matrix in $f0-$f15; per vector 4 lwc1, 4 chains
-# through ACC and 4 swc1.
+# Optimized (FPU): the matrix in $f0-$f15; 4 vectors per iteration, ordered
+# by asm/gen/sched.py. The bound is the COP1 slot: per vector 4 lwc1, 16 FPU
+# operations, 4 swc1 (model: 100 cycles per 4 vectors). count is a
+# multiple of 4. Measured with 2 vectors per iteration: 349 MFLOPS.
 	.p2align 3
 	.globl	transform_vector_list
 	.ent	transform_vector_list
@@ -340,33 +344,105 @@ transform_vector_list:
 	nop
 	.p2align 3
 1:	lwc1	$f16, 0($5)
+	addiu	$7, $7, -4
 	lwc1	$f17, 4($5)
 	lwc1	$f18, 8($5)
-	lwc1	$f19, 12($5)
 	mula.s	$f0, $f16
+	lwc1	$f19, 12($5)
 	madda.s	$f1, $f17
 	madda.s	$f2, $f18
-	madd.s	$f21, $f3, $f19
+	madd.s	$f29, $f3, $f19
 	mula.s	$f4, $f16
 	madda.s	$f5, $f17
 	madda.s	$f6, $f18
-	madd.s	$f23, $f7, $f19
+	madd.s	$f31, $f7, $f19
 	mula.s	$f8, $f16
 	madda.s	$f9, $f17
+	swc1	$f29, 0($6)
 	madda.s	$f10, $f18
-	madd.s	$f25, $f11, $f19
+	madd.s	$f29, $f11, $f19
 	mula.s	$f12, $f16
 	madda.s	$f13, $f17
+	swc1	$f31, 4($6)
 	madda.s	$f14, $f18
-	madd.s	$f27, $f15, $f19
-	addiu	$5, $5, 16
-	addiu	$7, $7, -1
-	swc1	$f21, 0($6)
-	swc1	$f23, 4($6)
-	swc1	$f25, 8($6)
-	swc1	$f27, 12($6)
+	madd.s	$f31, $f15, $f19
+	lwc1	$f21, 16($5)
+	lwc1	$f23, 20($5)
+	lwc1	$f25, 24($5)
+	mula.s	$f0, $f21
+	lwc1	$f27, 28($5)
+	madda.s	$f1, $f23
+	swc1	$f29, 8($6)
+	madda.s	$f2, $f25
+	madd.s	$f29, $f3, $f27
+	mula.s	$f4, $f21
+	madda.s	$f5, $f23
+	swc1	$f31, 12($6)
+	madda.s	$f6, $f25
+	madd.s	$f31, $f7, $f27
+	mula.s	$f8, $f21
+	madda.s	$f9, $f23
+	swc1	$f29, 16($6)
+	madda.s	$f10, $f25
+	madd.s	$f29, $f11, $f27
+	mula.s	$f12, $f21
+	madda.s	$f13, $f23
+	swc1	$f31, 20($6)
+	madda.s	$f14, $f25
+	madd.s	$f31, $f15, $f27
+	lwc1	$f16, 32($5)
+	lwc1	$f17, 36($5)
+	lwc1	$f18, 40($5)
+	mula.s	$f0, $f16
+	lwc1	$f19, 44($5)
+	madda.s	$f1, $f17
+	swc1	$f29, 24($6)
+	madda.s	$f2, $f18
+	madd.s	$f29, $f3, $f19
+	mula.s	$f4, $f16
+	madda.s	$f5, $f17
+	swc1	$f31, 28($6)
+	madda.s	$f6, $f18
+	madd.s	$f31, $f7, $f19
+	mula.s	$f8, $f16
+	madda.s	$f9, $f17
+	swc1	$f29, 32($6)
+	madda.s	$f10, $f18
+	madd.s	$f29, $f11, $f19
+	mula.s	$f12, $f16
+	madda.s	$f13, $f17
+	swc1	$f31, 36($6)
+	madda.s	$f14, $f18
+	madd.s	$f31, $f15, $f19
+	lwc1	$f21, 48($5)
+	lwc1	$f23, 52($5)
+	lwc1	$f25, 56($5)
+	mula.s	$f0, $f21
+	lwc1	$f27, 60($5)
+	madda.s	$f1, $f23
+	addiu	$5, $5, 64
+	swc1	$f29, 40($6)
+	madda.s	$f2, $f25
+	madd.s	$f29, $f3, $f27
+	mula.s	$f4, $f21
+	madda.s	$f5, $f23
+	swc1	$f31, 44($6)
+	madda.s	$f6, $f25
+	madd.s	$f31, $f7, $f27
+	mula.s	$f8, $f21
+	madda.s	$f9, $f23
+	swc1	$f29, 48($6)
+	madda.s	$f10, $f25
+	madd.s	$f29, $f11, $f27
+	mula.s	$f12, $f21
+	madda.s	$f13, $f23
+	swc1	$f31, 52($6)
+	madda.s	$f14, $f25
+	madd.s	$f31, $f15, $f27
+	swc1	$f29, 56($6)
+	swc1	$f31, 60($6)
 	bgtz	$7, 1b
-	addiu	$6, $6, 16
+	addiu	$6, $6, 64
 2:	jr	$ra
 	nop
 	.end	transform_vector_list
