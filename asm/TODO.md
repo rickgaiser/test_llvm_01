@@ -24,9 +24,20 @@ the LLVM assembler found while writing them.
   slower).
 - **Loads one block ahead** (software pipelining), so a load does not share
   an aligned pair with the instruction that uses its value.
-- **Unroll and pair for dual issue** in every naive kernel.
+- **Unroll and pair for dual issue**: done in every kernel (none is naive now); more
+  variants are cheap to try with `asm/harness/gen_app.py`.
+
+- **Resample** (27.6 Msmp/s, feature clang 27.3) and the FPU **Transform** (4.90, feature
+  4.97, which drops the zero entries of the matrix it sees initialized): only even with the
+  compiler; MMI for the positions, or a shorter dispatch of the work per output.
+- **Code size**: the kernels were chosen for speed; smaller variants of equal speed (e.g.
+  N64 To CT16 with 2 blocks per iteration, 0.4 % slower) are not tried systematically.
 
 ## LLVM assembler gaps
+
+- An immediate out of range is truncated without an error: `addiu $10, $9, 36864`
+  assembles as `addiu $10, $9, -28672` (GNU as expands or rejects it). It made a
+  hand-written loop run away and crash the PS2.
 
 - Two-operand `madd rs, rt`, `maddu rs, rt`, `madd1 rs, rt`, `maddu1 rs, rt`
   for the R5900 (binutils accepts them; rd is $0). The kernels write

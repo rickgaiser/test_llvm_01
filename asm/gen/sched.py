@@ -72,13 +72,19 @@ def parse(line):
             d = args[0]
             dests = ['VACC'] if d == '$ACC' else regs(d)
             srcs = [r for a in args[1:] for r in regs(a)]
-            if re.match(r'v(madd|msub)[a-z]*', base) and not d == '$ACC' or \
+            if re.match(r'v(madd|msub|opmsub)[a-z]*', base) and not d == '$ACC' or \
                re.match(r'v(madda|msuba)', base):
                 srcs.append('VACC')
             if base.endswith('q') and base not in ('vwaitq',):
-                srcs.append('Q')
+                srcs += ['Q', 'QW']
     elif op == 'vwaitq':
+        # the readers of Q wait for it (QW): without it they read the old Q
         srcs = ['Q']
+        dests = ['QW']
+    elif op in ('mtsab', 'mtsah'):
+        dests = ['SA']; srcs = regs(args[0])
+    elif op == 'qfsrv':
+        dests = regs(args[0]); srcs = regs(args[1]) + regs(args[2]) + ['SA']
     elif op in ('mtc1', 'qmtc2'):
         dests = regs(args[1]); srcs = regs(args[0])
     elif op in ('mfc1', 'qmfc2'):
@@ -102,9 +108,9 @@ def parse(line):
         srcs = regs(args[1]) + regs(args[2])
         if op.startswith('pmadd'):
             srcs += ['HL', 'HL1']
-    elif op in ('pmflo', 'pmfhi'):
+    elif op in ('pmflo', 'pmfhi') or base == 'pmfhl':
         dests = regs(args[0]); srcs = ['HL', 'HL1']
-    elif op in ('pmtlo', 'pmthi'):
+    elif op in ('pmtlo', 'pmthi', 'pmthl.lw'):
         dests = ['HL', 'HL1']; srcs = regs(args[0])
     else:
         dests = regs(args[0]) if args else []
@@ -156,6 +162,8 @@ def latency(prod, cons):
         return 2
     if prod in ('div.s',):
         return 7
+    if prod == 'vwaitq':
+        return 1
     if p in ('vdiv', 'vsqrt', 'vrsqrt'):
         return 7
     if prod in ('mula.s', 'madda.s', 'adda.s', 'msuba.s', 'suba.s') and \
@@ -253,7 +261,10 @@ def cycles(lines, align=0):
     return t + 1
 
 
-def schedule(lines, keep_last=0):
+LOADS = {'lb', 'lbu', 'lh', 'lhu', 'lw', 'lwu', 'ld', 'lq', 'lwc1', 'lqc2'}
+
+
+def schedule(lines, keep_last=0, memdeps=False, noalias=()):
     """A good order of lines: each next instruction is the one that issues
     earliest (in the model), ties to the longest path to the end. Keeps the
     dependencies (also the order of the stores and of the writers and readers
@@ -265,7 +276,11 @@ def schedule(lines, keep_last=0):
     info = [parse(l) for l in body]
     preds = [set() for _ in range(n)]
     last_w, readers, last_store = {}, {}, None
+    def base(line):
+        m = re.search(r'\((\$\w+)\)', line)
+        return m.group(1) if m else None
     for i, (op, dests, srcs) in enumerate(info):
+        l = body[i]
         for s in srcs:
             if s in last_w:
                 preds[i].add(last_w[s])
@@ -284,6 +299,13 @@ def schedule(lines, keep_last=0):
             if last_store is not None:
                 preds[i].add(last_store)
             last_store = i
+            if memdeps:
+                # a store after the loads before it
+                preds[i] |= set(k for k in range(i) if info[k][0] in LOADS and
+                                info[k][2][-1:] != [] and base(body[k]) not in noalias)
+        elif memdeps and op in LOADS and last_store is not None and base(l) not in noalias:
+            # memdeps: no load moves above a store (they may alias)
+            preds[i].add(last_store)
     succs = [[] for _ in range(n)]
     for i in range(n):
         for p in preds[i]:

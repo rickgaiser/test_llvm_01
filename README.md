@@ -97,10 +97,18 @@ asm is the target for the compilers: every kernel (all tests but the uarch ones)
 hand-written in `asm/<file>.S` for `<file>.c`, and the rest is built with the feature clang.
 With `BENCH_ASM` the C files declare those kernels instead of defining them, and their
 data (`KERNEL_DATA`) is visible to the assembly. Each kernel's comment says whether it
-has been optimized, and how; they start naive (a direct translation). asm uses no VU0
-(GPRs, MMI and the FPU); asm-vu0 (`ASM_VU0`) is the same with the kernels that have a VU0
-version, so the two show what VU0 gains per kernel. `asm/TODO.md`
-lists the optimizations to try and the gaps found in the LLVM assembler.
+has been optimized, and how, and the file headers list what was measured. asm uses no
+VU0 (GPRs, MMI and the FPU); asm-vu0 (`ASM_VU0`) is the same with the kernels that have
+a VU0 version, so the two show what VU0 gains per kernel. `asm/TODO.md` lists the
+optimizations still to try and the gaps found in the LLVM assembler.
+
+Most of the `.S` files are generated (do not edit them by hand): `asm/gen/*.py` write the
+kernels with parameters and order the loops with `asm/gen/sched.py`, an R5900 pairing and
+latency model. `asm/harness/` measures variants on the PS2: `build_app.sh <set>` builds
+`app.c` with the variants of `gen_app.py <set>` (the application kernels) against the
+kernels of the asm build, which give the expected results; run the ELF with the
+ps2-hw-test runner. `asm/gen/app_files.py` then writes `gfx_tests.S`, `sound_tests.S`
+and `emu_tests.S` with the chosen variants (`stream_file.py` does `stream_tests.S`).
 
 The C kernels are plain loops: no manual unrolling, software pipelining or extra
 accumulators, so that the compilers decide those themselves.
