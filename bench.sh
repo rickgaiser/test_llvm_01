@@ -24,7 +24,7 @@ PS2_IP=${PS2_IP:-192.168.1.10}
 PS2CLIENT=${PS2CLIENT:-$PS2MAX/toolchain/generic/llvm/tools/ps2client/bin/ps2client}
 ALL_VARIANTS="gcc upstream pr feature feature-vu0 asm asm-vu0"
 
-export PS2DEV=${PS2DEV:-/home/rgaiser/dev/ps2max/install}
+export PS2DEV=${PS2DEV:-/home/rgaiser/dev/ps2/ps2dev/install}
 export PS2SDK=${PS2SDK:-$PS2DEV/ps2sdk}
 
 # Build directory of the clang used for a variant
