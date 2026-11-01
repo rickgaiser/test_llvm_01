@@ -7,9 +7,11 @@ typedef float v4sf __attribute__((vector_size(16)));
 
 #define VPU_NUM_VECTORS 256
 
-// Alignment hint macro - Clang supports on params, GCC doesn't
+// The pointer parameters point to 16-byte aligned data: align_value (clang;
+// aligned(16) on a parameter would align the parameter itself). GCC has no
+// such attribute.
 #ifdef __clang__
-#define ALIGNED16 __attribute__((aligned(16)))
+#define ALIGNED16 __attribute__((align_value(16)))
 #else
 #define ALIGNED16
 #endif
