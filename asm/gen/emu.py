@@ -204,6 +204,51 @@ def r3000(name):
 
 # ---- SNES tiles ----
 
+def tile_decode_mmi(name):
+    """MMI, a tile per iteration: halfword y of the quadword Q at 0 is
+    p1[y] << 8 | p0[y], of R at 16 p3[y] << 8 | p2[y]. For bit b of pixel
+    x = 7 - b, T = (Q >> b) & 0x0101 | (R >> (b - 2)) & 0x0404 has the plane
+    bits at bits 0, 8, 2 and 10, and T | T >> 7 the pixel in bits 0-3. The
+    8x8 bytes are transposed into rows: pairs of pixels in halfwords (pand,
+    psllh 8, por), pextlh/pextuh, pextlw/pextuw; 4 sq."""
+    Q, R, K1, K4, KF = '$2', '$3', '$4', '$5', '$6'
+    T = [['$7', '$10', '$12'], ['$13', '$14', '$15']]
+    W = ['$24', '$25', '$16', '$17']
+    pre = la('$8', 'tiles') + la('$9', 'chunky') + ['addiu\t$11, $8, 4096',
+           f'ori\t{K1}, $0, 0x0101', f'pcpyld\t{K1}, {K1}, {K1}', f'pcpyh\t{K1}, {K1}',
+           f'psllh\t{K4}, {K1}, 2', f'pnor\t{KF}, $0, $0', f'psrlh\t{KF}, {KF}, 8']
+    body = [f'lq\t{Q}, 0($8)', f'lq\t{R}, 16($8)']
+    for x in range(8):
+        b = 7 - x
+        qs, rs, t = T[x % 2]
+        if b:
+            body += [f'psrlh\t{qs}, {Q}, {b}', f'pand\t{qs}, {qs}, {K1}']
+        else:
+            body += [f'pand\t{qs}, {Q}, {K1}']
+        if b != 2:
+            body += [f'psrlh\t{rs}, {R}, {b - 2}' if b > 2 else f'psllh\t{rs}, {R}, {2 - b}',
+                     f'pand\t{rs}, {rs}, {K4}']
+        else:
+            body += [f'pand\t{rs}, {R}, {K4}']
+        body += [f'por\t{t}, {qs}, {rs}', f'psrlh\t{rs}, {t}, 7', f'por\t{t}, {t}, {rs}']
+        if x % 2:
+            e = T[0][2]
+            body += [f'pand\t{e}, {e}, {KF}', f'psllh\t{t}, {t}, 8', f'por\t{W[x // 2]}, {e}, {t}']
+    X = ['$7', '$10', '$13', '$14']
+    body += [f'pextlh\t{X[0]}, {W[1]}, {W[0]}', f'pextuh\t{X[1]}, {W[1]}, {W[0]}',
+             f'pextlh\t{X[2]}, {W[3]}, {W[2]}', f'pextuh\t{X[3]}, {W[3]}, {W[2]}',
+             f'pextlw\t$12, {X[2]}, {X[0]}', f'pextuw\t$15, {X[2]}, {X[0]}',
+             f'pextlw\t{Q}, {X[3]}, {X[1]}', f'pextuw\t{R}, {X[3]}, {X[1]}',
+             'sq\t$12, 0($9)', 'sq\t$15, 16($9)', f'sq\t{Q}, 32($9)', f'sq\t{R}, 48($9)',
+             'addiu\t$8, $8, 32', 'addiu\t$9, $9, 64']
+    pro, epi = save(used_regs(pre + body))
+    return func(name, f'# {name}: MMI, a tile per iteration: T = (Q >> b) & 0x0101 | (R >> (b - 2)) & 0x0404\n'
+                '# per pixel x = 7 - b (Q, R: the two quadwords of the tile), T | T >> 7 its 4 bits;\n'
+                '# the 8x8 bytes transposed into rows (psllh, por, pextlh/uh, pextlw/uw), 4 sq.',
+                pro + pre, body, 'bne\t$8, $11, 1b',
+                epi + la('$4', 'chunky') + ['j\tapp_hash', 'ori\t$5, $0, 8192'])
+
+
 def tile_decode(name):
     """A table of 256 doublewords: byte x of T[p] = bit 7 - x of p. A row of
     8 pixels is T[p0] | T[p1] << 1 | T[p2] << 2 | T[p3] << 3 (ld, dsll, or),

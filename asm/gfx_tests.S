@@ -21,8 +21,9 @@
 #   GEOM, VU0 | FPU (feature-vu0 | feature):
 #     Transform        6.19 | 4.90  (5.81 | 4.97: feature knows the zeros of
 #                                    the matrix, the hand-written code does not)
-#     Lighting        11.64 | 5.44  (6.93 | 3.57)
-#     Lighting v4sf   11.62 | 5.48  (5.92 | 5.61)
+#     Lighting        11.64 | 6.63  (9.29 | 5.63: the FPU version 2 vertices
+#                                    per iteration; 1: 5.53)
+#     Lighting v4sf   11.62 | 5.48  (8.88 | 5.61)
 #     Field Scale      5.03 | 4.45  (4.71 | 4.24)   memory-bound, as the
 #     Field Offset     5.03 | 4.45  (4.89 | 4.24)   MxV, Project and Face
 #     Project          6.44 | 6.20  (6.27 | 5.99)   Normals
@@ -1023,13 +1024,14 @@ lighting:
 #else
 	.section .rodata
 	.p2align 4
-lighting_c:	.float	0.5, 0.5, -0.5, -0.75, 0.25, 0.0, 0.0, -0.5, 0.75, 64.0, 48.0, 32.0, 16.0, 32.0, 64.0, 32.0, 32.0, 16.0, 16.0, 1.0, 0.0, 128.0
+lighting_c:	.float	0.5, -0.5, -0.75, 0.25, 0.75, 64.0, 48.0, 32.0, 16.0, 1.0, 0.0, 128.0
 	.text
 
-# lighting: FPU per vertex: a dot per light (mula.s, madda.s, madd.s)
-# and max.s 0; per channel a chain through ACC from 16 = 128 * the ambient,
-# the colors scaled by 128, min.s 128, cvt.w.s, mfc1; packed by sll and or.
-# PREF 2 lines ahead.
+# lighting: FPU, 2 vertices per iteration (interleaved): a dot per light
+# (mula.s, madda.s, madd.s, no terms for zero coefficients) and max.s 0;
+# per channel a chain through ACC from 16 = 128 * the ambient, the colors
+# scaled by 128, min.s 128, cvt.w.s, mfc1; packed by sll and or. A register
+# per distinct constant. PREF 2 lines ahead.
 	.p2align 3
 	.globl	lighting
 	.ent	lighting
@@ -1054,67 +1056,95 @@ lighting:
 	lwc1	$f9, 36($8)
 	lwc1	$f10, 40($8)
 	lwc1	$f11, 44($8)
-	lwc1	$f12, 48($8)
-	lwc1	$f13, 52($8)
-	lwc1	$f14, 56($8)
-	lwc1	$f15, 60($8)
-	lwc1	$f16, 64($8)
-	lwc1	$f17, 68($8)
-	lwc1	$f18, 72($8)
-	lwc1	$f19, 76($8)
-	lwc1	$f21, 80($8)
-	lwc1	$f23, 84($8)
 	ADDR($8, geom_mem, NORMALS)
 	ADDR($9, geom_mem, COLORS)
 	addiu	$10, $8, 8192
 	lui	$11, 0x8000
 	.p2align 3
-1:	lwc1	$f25, 0($8)
-	lwc1	$f27, 4($8)
-	lwc1	$f29, 8($8)
-	mula.s	$f25, $f0
-	madda.s	$f27, $f1
+1:	lwc1	$f12, 0($8)
+	lwc1	$f13, 4($8)
+	lwc1	$f14, 8($8)
+	mula.s	$f12, $f0
+	madda.s	$f13, $f0
 	pref	0, 128($8)
-	madd.s	$f31, $f29, $f2
-	addiu	$8, $8, 16
-	mula.s	$f25, $f3
-	madda.s	$f27, $f4
-	madd.s	$f20, $f29, $f5
-	mula.s	$f25, $f6
-	madda.s	$f27, $f7
-	madd.s	$f22, $f29, $f8
-	max.s	$f31, $f31, $f21
-	max.s	$f20, $f20, $f21
-	mula.s	$f18, $f19
-	max.s	$f22, $f22, $f21
-	madda.s	$f31, $f9
-	madda.s	$f20, $f12
-	madd.s	$f24, $f22, $f15
-	mula.s	$f18, $f19
-	madda.s	$f31, $f10
-	madda.s	$f20, $f13
-	madd.s	$f26, $f22, $f16
-	mula.s	$f18, $f19
-	madda.s	$f31, $f11
-	madda.s	$f20, $f14
-	madd.s	$f28, $f22, $f17
-	min.s	$f26, $f26, $f23
-	min.s	$f24, $f24, $f23
-	min.s	$f28, $f28, $f23
-	cvt.w.s	$f26, $f26
-	cvt.w.s	$f24, $f24
+	madd.s	$f15, $f14, $f1
+	mula.s	$f12, $f2
+	madd.s	$f16, $f13, $f3
+	mula.s	$f13, $f1
+	madd.s	$f17, $f14, $f4
+	max.s	$f15, $f15, $f10
+	max.s	$f16, $f16, $f10
+	mula.s	$f8, $f9
+	max.s	$f17, $f17, $f10
+	madda.s	$f15, $f5
+	madda.s	$f16, $f8
+	lwc1	$f21, 16($8)
+	madd.s	$f18, $f17, $f7
+	mula.s	$f8, $f9
+	madda.s	$f15, $f6
+	madda.s	$f16, $f7
+	madd.s	$f19, $f17, $f7
+	mula.s	$f8, $f9
+	madda.s	$f15, $f7
+	madda.s	$f16, $f5
+	madd.s	$f20, $f17, $f8
+	lwc1	$f22, 20($8)
+	lwc1	$f23, 24($8)
+	addiu	$8, $8, 32
+	mula.s	$f21, $f0
+	madda.s	$f22, $f0
+	madd.s	$f24, $f23, $f1
+	mula.s	$f21, $f2
+	madd.s	$f25, $f22, $f3
+	mula.s	$f22, $f1
+	madd.s	$f26, $f23, $f4
+	max.s	$f24, $f24, $f10
+	max.s	$f25, $f25, $f10
+	mula.s	$f8, $f9
+	max.s	$f26, $f26, $f10
+	madda.s	$f24, $f5
+	madda.s	$f25, $f8
+	min.s	$f19, $f19, $f11
+	madd.s	$f27, $f26, $f7
+	mula.s	$f8, $f9
+	madda.s	$f24, $f6
+	madda.s	$f25, $f7
+	madd.s	$f28, $f26, $f7
+	mula.s	$f8, $f9
+	madda.s	$f24, $f7
+	madda.s	$f25, $f5
+	madd.s	$f29, $f26, $f8
+	min.s	$f18, $f18, $f11
+	min.s	$f20, $f20, $f11
+	min.s	$f28, $f28, $f11
+	min.s	$f27, $f27, $f11
+	min.s	$f29, $f29, $f11
+	cvt.w.s	$f19, $f19
+	cvt.w.s	$f18, $f18
+	cvt.w.s	$f20, $f20
 	cvt.w.s	$f28, $f28
-	mfc1	$3, $f26
-	mfc1	$2, $f24
+	cvt.w.s	$f27, $f27
+	cvt.w.s	$f29, $f29
+	mfc1	$3, $f19
+	mfc1	$2, $f18
+	mfc1	$4, $f20
 	sll	$3, $3, 8
-	mfc1	$4, $f28
+	mfc1	$6, $f28
 	or	$2, $2, $3
+	mfc1	$5, $f27
 	sll	$4, $4, 16
+	mfc1	$7, $f29
+	sll	$6, $6, 8
 	or	$2, $2, $4
+	or	$5, $5, $6
+	sll	$7, $7, 16
 	or	$2, $2, $11
+	or	$5, $5, $7
 	sw	$2, 0($9)
+	or	$5, $5, $11
+	sw	$5, 4($9)
 	bne	$8, $10, 1b
-	addiu	$9, $9, 4
+	addiu	$9, $9, 8
 	lwc1	$f20, 0($sp)
 	lwc1	$f22, 4($sp)
 	lwc1	$f24, 8($sp)

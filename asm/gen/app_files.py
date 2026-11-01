@@ -43,8 +43,9 @@ GFX_HEAD = '''# Hand-written R5900 versions of the gfx_tests.c kernels (bench va
 #   GEOM, VU0 | FPU (feature-vu0 | feature):
 #     Transform        6.19 | 4.90  (5.81 | 4.97: feature knows the zeros of
 #                                    the matrix, the hand-written code does not)
-#     Lighting        11.64 | 5.44  (6.93 | 3.57)
-#     Lighting v4sf   11.62 | 5.48  (5.92 | 5.61)
+#     Lighting        11.64 | 6.63  (9.29 | 5.63: the FPU version 2 vertices
+#                                    per iteration; 1: 5.53)
+#     Lighting v4sf   11.62 | 5.48  (8.88 | 5.61)
 #     Field Scale      5.03 | 4.45  (4.71 | 4.24)   memory-bound, as the
 #     Field Offset     5.03 | 4.45  (4.89 | 4.24)   MxV, Project and Face
 #     Project          6.44 | 6.20  (6.27 | 5.99)   Normals
@@ -81,7 +82,9 @@ EMU_HEAD = '''# Hand-written R5900 versions of the emu_tests.c kernels (bench va
 #   6502 Interp   21.0 MIPS (14.7)    threaded dispatch, branchless branches
 #   R3000 Interp  15.3 MIPS (10.4)    threaded, the next instruction fetched
 #                                     first, one table for opcode and funct
-#   SNES Tiles    74.6 Mpix/s (47.5)  a table of 256 doublewords
+#   SNES Tiles    88.7 Mpix/s (83.9)  MMI on the two quadwords of a tile,
+#                                     an 8x8 byte transpose (a table of 256
+#                                     doublewords: 74.6)
 #   N64 To CT16   55.1 Mpix/s (48.8)  MMI, the study of hand/gen_n64.py
 #   Guest Loads   23.8 Mload/s (17.5) MMI byte swap, PREF of guest_addr 2
 #                 lines and of the host word 16 loads ahead (no host PREF:
@@ -96,7 +99,7 @@ write('gfx_tests.S', GFX_HEAD, [
     gfx.to_ct16('to_ct16', 4, 4),
     gfx.scale_nn('scale_nn', 0),
     (gfx.transform_vu0('transform', 3, True), gfx.transform_fpu('transform', 3, True)),
-    (gfx.lighting_vu0('lighting', False, 2), gfx.lighting_fpu('lighting', False, 2)),
+    (gfx.lighting_vu0('lighting', False, 2), gfx.lighting_fpu_u2('lighting', False, 2)),
     (gfx.lighting_vu0('lighting_v4sf', True, 2), gfx.lighting_fpu('lighting_v4sf', True, 2)),
     (gfx.stream_v('field_scale_v4sf', 'scale', 'vu0', 4, 2), gfx.stream_v('field_scale_v4sf', 'scale', 'fpu', 4, 2)),
     (gfx.stream_v('field_scale_bc_v4sf', 'offset', 'vu0', 4, 2),
@@ -126,7 +129,7 @@ write('sound_tests.S', SOUND_HEAD, [
 write('emu_tests.S', EMU_HEAD, [
     emu.cpu8('cpu8'),
     emu.r3000('r3000'),
-    emu.tile_decode('tile_decode'),
+    emu.tile_decode_mmi('tile_decode'),
     emu.n64_to_ct16('n64_to_ct16', 4, 30, 2),
     emu.guest_loads('guest_loads', 'mmi', 4, 2, 16),
 ])

@@ -107,12 +107,15 @@ elif SET == 'sound':
         add('Transform', f'fpu_d{D}_w{W}', lambda n, D=D, W=W: gfx.transform_fpu(n, D, W))
     for D in (2, 4):
         add('Lighting', f'fpu_d{D}', lambda n, D=D: gfx.lighting_fpu(n, False, D))
+    for D in (2, 4):
+        add('Lighting', f'fpu_u2_d{D}', lambda n, D=D: gfx.lighting_fpu_u2(n, False, D))
     for U, D in ((1, 2), (1, 3), (1, 6)):
         add('Alpha Blend', f'u{U}_d{D}', lambda n, U=U, D=D: gfx.alpha_blend(n, U, D))
 elif SET == 'emu':
     add('6502 Interp', 'threaded', lambda n: emu.cpu8(n))
     add('R3000 Interp', 'threaded', lambda n: emu.r3000(n))
     add('SNES Tiles', 'table', lambda n: emu.tile_decode(n))
+    add('SNES Tiles', 'mmi', lambda n: emu.tile_decode_mmi(n))
     add('N64 To CT16', 'u4_a30', lambda n: emu.n64_to_ct16(n, 4, 30, 2))
     add('N64 To CT16', 'u2_a0', lambda n: emu.n64_to_ct16(n, 2, 0, 2))
     for mode in ('scalar', 'mmi'):

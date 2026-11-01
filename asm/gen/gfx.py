@@ -521,6 +521,68 @@ def lighting_fpu(name, v4sf, D=0):
                  hash_tail(['ADDR($4, geom_mem, COLORS)'], 2048, epi), rodata(C, data))
 
 
+def lighting_fpu_u2(name, v4sf, D=0):
+    """lighting_fpu for 2 vertices per iteration, which the scheduler
+    interleaves (the chains through ACC and the latencies of one vertex leave
+    COP1 slots): a register per distinct constant, and no terms for the zero
+    coefficients of the directions."""
+    dirs, cols = light_consts(v4sf)
+    C = f'{name}_c'
+    vals = []
+    def const(v):
+        if v not in vals:
+            vals.append(v)
+        return vals.index(v)
+    for d in dirs:
+        for x in d:
+            if x:
+                const(x)
+    for c in cols:
+        for x in c:
+            const(x)
+    B16, ONE, Z, K = const(16.0), const(1.0), const(0.0), const(128.0)
+    regs = [f'$f{i}' for i in range(32)]
+    CR = regs[:len(vals)]
+    free = regs[len(vals):]
+    assert len(free) >= 18, 'too many constants for 2 vertices'
+    T = [free[9 * k:9 * k + 9] for k in range(2)]
+    pre = la('$8', C) + [f'lwc1\t{r}, {4 * k}($8)' for k, r in enumerate(CR)]
+    body = []
+    for k in range(2):
+        N, Dd, R = T[k][:3], T[k][3:6], T[k][6:9]
+        body += [f'lwc1\t{N[j]}, {16 * k + 4 * j}($8)' for j in range(3)]
+        for l in range(3):
+            terms = [(N[j], CR[const(x)]) for j, x in enumerate(dirs[l]) if x]
+            if len(terms) == 1:
+                body += [f'mul.s\t{Dd[l]}, {terms[0][0]}, {terms[0][1]}']
+            else:
+                body += [f'mula.s\t{terms[0][0]}, {terms[0][1]}']
+                body += [f'madda.s\t{a}, {b}' for a, b in terms[1:-1]]
+                body += [f'madd.s\t{Dd[l]}, {terms[-1][0]}, {terms[-1][1]}']
+            body += [f'max.s\t{Dd[l]}, {Dd[l]}, {CR[Z]}']
+        for ch in range(3):
+            body += [f'mula.s\t{CR[B16]}, {CR[ONE]}'] + \
+                    [f'madda.s\t{Dd[l]}, {CR[const(cols[l][ch])]}' for l in range(2)] + \
+                    [f'madd.s\t{R[ch]}, {Dd[2]}, {CR[const(cols[2][ch])]}',
+                     f'min.s\t{R[ch]}, {R[ch]}, {CR[K]}', f'cvt.w.s\t{R[ch]}, {R[ch]}']
+        g = ['$2', '$3', '$4'] if k == 0 else ['$5', '$6', '$7']
+        body += [f'mfc1\t{g[ch]}, {R[ch]}' for ch in range(3)]
+        body += [f'sll\t{g[1]}, {g[1]}, 8', f'sll\t{g[2]}, {g[2]}, 16', f'or\t{g[0]}, {g[0]}, {g[1]}',
+                 f'or\t{g[0]}, {g[0]}, {g[2]}', f'or\t{g[0]}, {g[0]}, $11', f'sw\t{g[0]}, {4 * k}($9)']
+    body += ([f'pref\t0, {64 * D}($8)'] if D else []) + ['addiu\t$8, $8, 32', 'addiu\t$9, $9, 8']
+    pro, epi = savef(used_regs(body + pre))
+    pre = pro + pre + ['ADDR($8, geom_mem, NORMALS)', 'ADDR($9, geom_mem, COLORS)',
+                       'addiu\t$10, $8, 8192', 'lui\t$11, 0x8000']
+    return vfunc(name, f'# {name}: FPU, 2 vertices per iteration (interleaved): a dot per light\n'
+                 f'# (mula.s, madda.s, madd.s, no terms for zero coefficients) and max.s 0;\n'
+                 f'# per channel a chain through ACC from 16 = 128 * the ambient, the colors\n'
+                 f'# scaled by 128' + (' and the intensity' if v4sf else '') +
+                 f', min.s 128, cvt.w.s, mfc1; packed by sll and or. A register\n'
+                 f'# per distinct constant. PREF {D} lines ahead.',
+                 pre, body, 'bne\t$8, $10, 1b',
+                 hash_tail(['ADDR($4, geom_mem, COLORS)'], 2048, epi), rodata(C, vals))
+
+
 def stream_v(name, what, unit, U=4, D=0, W=False):
     """field_scale (n * (v.y * n.z)), field_offset (n + v.y * n.z), project
     (v * (1 / v.z)), on VU0 ('vu0') or the FPU ('fpu'). U vertices per
