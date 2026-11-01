@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(HERE, '..', 'gen'))
 import gfx
 import sound
 import emu
+import game
 
 OUT, SET = sys.argv[1], sys.argv[2]
 specs = []   # (test name, variant name, generator(symbol))
@@ -33,6 +34,18 @@ if SET == 'gfx2d':
             add('To CT16', f'u{U}_d{D}', lambda n, U=U, D=D: gfx.to_ct16(n, U, D))
     for D in (0, 4):
         add('Scale NN', f'd{D}', lambda n, D=D: gfx.scale_nn(n, D))
+elif SET == 'game':
+    for U, D in ((1, 0), (1, 2), (1, 4), (2, 2)):
+        add('Copy Loop', f'u{U}_d{D}', lambda n, U=U, D=D: game.copy(n, U, D))
+    add('Packet Build', 'scalar', lambda n: game.packet_scalar(n))
+    add('Packet Build', 'mmi', lambda n: game.packet_mmi(n))
+    add('LZ Decompress', 'chunk8', lambda n: game.lz(n))
+    for U, G, D, M in ((4, 1, 2, False), (4, 4, 0, False), (4, 4, 2, False), (4, 4, 4, False),
+                       (4, 4, 2, True), (4, 4, 4, True), (2, 8, 2, True), (4, 4, 8, True)):
+        add('Particles', f'u{U}_g{G}_d{D}{"_m" if M else ""}',
+            lambda n, U=U, G=G, D=D, M=M: game.particles(n, U, D, G, M))
+    for U in (1, 2):
+        add('Tri Raster', f'u{U}', lambda n, U=U: game.raster(n, U))
 elif SET == 'geom':
     for D in (0, 4):
         add('Transform', f'vu0_d{D}', lambda n, D=D: gfx.transform_vu0(n, D))

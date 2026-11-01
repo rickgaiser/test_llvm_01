@@ -1,5 +1,5 @@
 // The application kernels of the bench (gfx_tests.c, sound_tests.c,
-// emu_tests.c): hand-written variants (appv.S and appv.h, made by
+// emu_tests.c, game_tests.c): hand-written variants (appv.S and appv.h, made by
 // gen_app.py) against the kernels of the asm build, which give the expected
 // result. Linked with the objects of the asm build except main.o and
 // app_tests.o: this file has its own app_rand and app_hash. Prints the rate
@@ -28,7 +28,9 @@ static inline u32 cycles(void) {
 #include "appv.h"
 
 static const app_suite *const suites[] = {&gfx_suite, &geom_suite,
-                                          &sound_suite, &emu_suite};
+                                          &sound_suite, &emu_suite,
+                                          &game_suite};
+#define NUM_SUITES (sizeof(suites) / sizeof(suites[0]))
 #define MIN_CYCLES 10000000u
 
 int main(void) {
@@ -36,7 +38,7 @@ int main(void) {
     for (int rep = 0; rep < 2; rep++)
         for (int k = 0; k < nv; k++) {
             const app_test *t = 0;
-            for (unsigned s = 0; s < 4 && !t; s++)
+            for (unsigned s = 0; s < NUM_SUITES && !t; s++)
                 for (unsigned i = 0; i < suites[s]->count; i++)
                     if (!strcmp(suites[s]->tests[i].name, variants[k].test))
                         t = &suites[s]->tests[i];
@@ -51,6 +53,9 @@ int main(void) {
             rand_state = 1;
             t->init();
             u32 got = variants[k].f();
+            if (rep == 0)
+                printf("R %s|%s ref 0x%08x got 0x%08x\n", t->name, variants[k].name,
+                       (unsigned)ref, (unsigned)got);
             u32 runs = 0, c0 = cycles(), c;
             do {
                 variants[k].f();

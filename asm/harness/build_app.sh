@@ -16,7 +16,8 @@ FLAGS="-D_EE -O2 -I$PS2SDK/ee/include -I$PS2SDK/common/include -I$PS2DEV/ee/mips
 $CLANG $FLAGS -I"$OUT" -c "$HERE/app.c" -o "$OUT/app.o"
 $CLANG $FLAGS -mvu0 -c "$OUT/appv.S" -o "$OUT/appv.o"
 $GCC -o "$OUT/app.elf" "$OUT/app.o" "$OUT/appv.o" \
-  "$ASMB/gfx_tests.o" "$ASMB/sound_tests.o" "$ASMB/emu_tests.o" \
+  "$ASMB/gfx_tests.o" "$ASMB/sound_tests.o" "$ASMB/emu_tests.o" "$ASMB/game_tests.o" \
   "$ASMB/asm_gfx_tests.o" "$ASMB/asm_sound_tests.o" "$ASMB/asm_emu_tests.o" \
+  "$ASMB/asm_game_tests.o" \
   -T$PS2SDK/ee/startup/linkfile -L$PS2SDK/ee/lib -Wl,-zmax-page-size=128
 echo "$OUT/app.elf"
