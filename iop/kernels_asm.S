@@ -356,32 +356,32 @@ FN(up_24000)
 	jr	$ra
 	move	$v0, $zero
 
-/* two outputs per pass: one word store per channel */
+/* Four outputs per pass, halfword stores. Packing two samples into a word store
+   costs more in shifts than it saves: the source stays in the D-cache, and two
+   chains in turn leave no load delay empty */
+#define UP_GEN2(o)				\
+	lh	$t0, o($t8);			\
+	lh	$t1, o + 2($t8);		\
+	sll	$t0, $t0, 2;			\
+	sll	$t1, $t1, 2;			\
+	addu	$t0, $a1, $t0;			\
+	addu	$t1, $a1, $t1;			\
+	lhu	$t2, 0($t0);			\
+	lhu	$t3, 2($t0);			\
+	lhu	$t4, 0($t1);			\
+	sh	$t2, o($a0);			\
+	lhu	$t5, 2($t1);			\
+	sh	$t3, o + 1024($a0);		\
+	sh	$t4, o + 2($a0);		\
+	sh	$t5, o + 1026($a0)
 FN(up_gen)
 	la	$t8, up_lut
 	addiu	$t9, $t8, 1024
-	addiu	$t7, $a0, 1024			/* right */
-	lui	$t6, 0xffff
-1:	lh	$t0, 0($t8)
-	lh	$t1, 2($t8)
-	sll	$t0, $t0, 2
-	sll	$t1, $t1, 2
-	addu	$t0, $a1, $t0
-	addu	$t1, $a1, $t1
-	lw	$t0, 0($t0)
-	lw	$t1, 0($t1)
-	addiu	$t8, $t8, 4
-	andi	$t2, $t0, 0xffff
-	sll	$t3, $t1, 16
-	or	$t2, $t2, $t3
-	sw	$t2, 0($a0)
-	srl	$t2, $t0, 16
-	and	$t3, $t1, $t6
-	or	$t2, $t2, $t3
-	addiu	$a0, $a0, 4
-	sw	$t2, 0($t7)
+1:	UP_GEN2(0)
+	UP_GEN2(4)
+	addiu	$t8, $t8, 8
 	bne	$t8, $t9, 1b
-	addiu	$t7, $t7, 4
+	addiu	$a0, $a0, 8
 	jr	$ra
 	move	$v0, $zero
 

@@ -23,7 +23,7 @@ GFLAGS  = -D_IOP -fno-builtin -G0 -Wall -msoft-float -mno-explicit-relocs $(INCS
 CFLAGS  = -D_IOP -fno-builtin -ffreestanding -G0 -Wall -msoft-float -mno-abicalls -fno-pic \
           -fno-unwind-tables -fno-asynchronous-unwind-tables $(INCS)
 
-KOBJS   = $(OUT)/k_gos.o $(OUT)/k_go2.o $(OUT)/k_cos.o $(OUT)/k_co2.o $(OUT)/kernels_asm.o $(OUT)/tables.o
+KOBJS   = $(OUT)/k_gos.o $(OUT)/k_go2.o $(OUT)/k_cos.o $(OUT)/k_co2.o $(OUT)/k_cor.o $(OUT)/kernels_asm.o $(OUT)/tables.o
 OBJS    = $(OUT)/main.o $(KOBJS) $(OUT)/imports.o
 
 all: $(OUT)/iop_bench.irx
@@ -40,6 +40,9 @@ $(OUT)/k_cos.o: kernels.c kernels.h $(LLVM)/clang
 $(OUT)/k_co2.o: kernels.c kernels.h $(LLVM)/clang
 	@mkdir -p $(OUT)
 	$(CLANG) $(CFLAGS) -O2 -DV=co2_ -c $< -o $@
+$(OUT)/k_cor.o: kernels.c kernels.h $(LLVM)/clang
+	@mkdir -p $(OUT)
+	$(CLANG) $(CFLAGS) -O2 -DR=restrict -DV=cor_ -c $< -o $@
 $(OUT)/kernels_asm.o: kernels_asm.S
 	@mkdir -p $(OUT)
 	$(CLANG) $(CFLAGS) -c $< -o $@

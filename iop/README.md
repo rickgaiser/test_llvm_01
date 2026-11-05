@@ -3,7 +3,7 @@
 What the PS2's IOP spends its time on, as C and as hand-written assembly, compared across
 gcc, clang and hand code on a real R3000A. See `libs/maxsdk/docs/iop-core.md` for the CPU itself.
 
-Each kernel exists in five variants, all in one module and run on the same data:
+Each kernel exists in six variants, all in one module and run on the same data:
 
 | Variant | Built with |
 |---|---|
@@ -11,6 +11,7 @@ Each kernel exists in five variants, all in one module and run on the same data:
 | gcc-O2 | The same at `-O2` |
 | clang-Os | Feature clang, `-mcpu=r3000a`, flags of mxlink's `IOP_CLANG` |
 | clang-O2 | The same at `-O2` |
+| clang-O2r | clang-O2 with `restrict` on the pointers: the only difference in the source |
 | asm | `kernels_asm.S` |
 
 Times are in cycles of the 36.864 MHz clock: the best of 5 calls with interrupts off. Buffers are
@@ -58,30 +59,30 @@ on the PS2 takes about 10 seconds.
 
 On an SCPH-70004, 2026-11-05, in cycles; 4 KiB of data unless noted in `main.c`.
 
-| Kernel | gcc-Os | gcc-O2 | clang-Os | clang-O2 | asm | clang-O2 before |
-|---|---:|---:|---:|---:|---:|---:|
-| cpy_byte | 30777 | 22591 | 22595 | 16428 | 5702 | 26681 |
-| cpy_word | 9266 | 7204 | 7206 | 6728 | 5698 | 8242 |
-| cpy_unal | 12335 | 9021 | 9028 | 7502 | 6990 | 9593 |
-| set_word | 4133 | 3108 | 3110 | 2116 | 2104 | 4134 |
-| str_len | 26138 | 17948 | 17947 | 17947 | 8767 | 22071 |
-| net_sum | 17964 | 9780 | 9785 | 7741 | 5950 | 11829 |
-| net_swap | 24119 | 20860 | 18744 | 15171 | 11064 | 20269 |
-| mc_edc | 26154 | 17957 | 17957 | 13383 | 4144 | 17957 |
-| mc_ecc | 62862 | 60695 | 68894 | 57759 | 43437 | 75085 |
-| bit_rev | 23369 | 21832 | 21836 | 21321 | 20866 | 23107 |
-| up_24000 | 18383 | 18382 | 18384 | 18388 | 15168 | 18384 |
-| up_gen | 6101 | 6110 | 6101 | 6104 | 5972 | 7539 |
-| mix_vol | 55591 | 49947 | 55595 | 49513 | 32924 | 57520 |
-| gain_q16 | 19161 | 17368 | 17368 | 16609 | 13295 | - |
-| fifo_rd | 14372 | 13426 | 13426 | 13425 | 8548 | 13426 |
-| ring_put | 7591 | 11670 | 7595 | 6269 | 1454 | 13863 |
-| list_walk | 3621 | 3372 | 3370 | 3374 | 3133 | 3369 |
-| fat_scan | 9749 | 5664 | 5665 | 5666 | 4388 | 5665 |
-| crc32 | 53296 | 45105 | 45109 | 39605 | 33721 | 49277 |
-| itoa10 | 57250 | 55742 | 27797 | 27797 | 26417 | 29047 |
-| mul_const | 23339 | 12601 | 12609 | 10798 | 10301 | 13112 |
-| mul64 | 4454 | 4452 | 4330 | 4287 | 3444 | 6537 |
+| Kernel | gcc-Os | gcc-O2 | clang-Os | clang-O2 | clang-O2r | asm | clang-O2 before |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| cpy_byte | 30778 | 22594 | 22594 | 16428 | 14380 | 5701 | 26681 |
+| cpy_word | 9265 | 7204 | 7208 | 6728 | 6210 | 5700 | 8242 |
+| cpy_unal | 12343 | 9021 | 9024 | 7502 | 7227 | 6986 | 9593 |
+| set_word | 4133 | 3108 | 3110 | 2118 | 2118 | 2105 | 4134 |
+| str_len | 26137 | 17948 | 17947 | 17947 | 17947 | 8766 | 22071 |
+| net_sum | 17964 | 9776 | 9783 | 7741 | 7741 | 5945 | 11829 |
+| net_swap | 24121 | 20854 | 18743 | 15169 | 14156 | 11060 | 20269 |
+| mc_edc | 26156 | 17957 | 17957 | 13377 | 13374 | 4144 | 17957 |
+| mc_ecc | 62848 | 60690 | 68887 | 57762 | 57756 | 43432 | 75085 |
+| bit_rev | 23368 | 21837 | 21835 | 21321 | 21321 | 20870 | 23107 |
+| up_24000 | 18383 | 18377 | 18383 | 18387 | 18391 | 15168 | 18384 |
+| up_gen | 6108 | 6110 | 6109 | 6108 | 5026 | 5026 | 7539 |
+| mix_vol | 55594 | 49955 | 55597 | 49507 | 47967 | 32895 | 57520 |
+| gain_q16 | 19156 | 17367 | 17367 | 16608 | 15086 | 13296 | - |
+| fifo_rd | 14372 | 13430 | 13426 | 13426 | 13426 | 8551 | 13426 |
+| ring_put | 7591 | 11670 | 7597 | 6266 | 6266 | 1455 | 13863 |
+| list_walk | 3621 | 3374 | 3370 | 3376 | 3369 | 3132 | 3369 |
+| fat_scan | 9753 | 5663 | 5664 | 5666 | 5663 | 4389 | 5665 |
+| crc32 | 53300 | 45101 | 45105 | 39611 | 39596 | 33730 | 49277 |
+| itoa10 | 57249 | 55742 | 27801 | 27797 | 27797 | 26417 | 29047 |
+| mul_const | 23339 | 12601 | 12604 | 10798 | 10314 | 10306 | 13112 |
+| mul64 | 4457 | 4453 | 4328 | 4291 | 3792 | 3443 | 6537 |
 
 "Before" is clang before the changes below. Geometric means over the kernels with a before value:
 
@@ -90,7 +91,7 @@ On an SCPH-70004, 2026-11-05, in cycles; 4 KiB of data unless noted in `main.c`.
 | clang-O2 / gcc-O2 | 1.08 | **0.85** |
 | clang-Os / gcc-Os | 0.89 | **0.79** |
 
-asm / clang-O2 is 0.71 over all kernels. Code size of all kernels: gcc-Os 1520 bytes, gcc-O2 1568,
+asm / clang-O2 is 0.70 over all kernels, asm / clang-O2r 0.73, and clang-O2r / clang-O2 0.96. Code size of all kernels: gcc-Os 1520 bytes, gcc-O2 1568,
 clang-Os 1576, clang-O2 4536: `-O2` buys its speed with 3 times the code. mxlink's `ps2link` at `-Os`
 kept the size of every function that had not changed.
 
@@ -107,6 +108,9 @@ All for `-mcpu=r3000a` only. R5900 code of maxsdk is unchanged (44 of 44 objects
 | `MipsAccOrderDAGMutation`: a multiply waits until HI/LO has been read | There is one pair. The scheduler started the multiplies early for their latency, and results went through the stack | `mul64` 6537 to 4287 |
 | Multiply operands: the one known to be smaller in rs | Measured: only rs sets the time, 8, 11 or 15 cycles. `mult` compares sign bits, `multu` leading zeros | Not measured alone; `itoa10` shows what the wrong order costs: 27797 against 32120 |
 | Partial and runtime unrolling at `-O2`, at most 4 times, single-block loops, never at `-Os` | Increments and the branch are a large part of a short loop on a single-issue CPU | `cpy_byte` 22595 to 16428, `set_word` 3110 to 2116 |
+
+The scheduling model has the measured values too (`mult` 14, `div` 37, stores 2 cycles on a resource
+of their own, the delay of `mfc0`). That is for accuracy: no kernel changed, within 0.02%.
 
 Tests: `r3000a-loop-inc.ll`, `r3000a-select-branch.ll`, `r3000a-mult-rs.ll`, `r3000a-acc-order.ll`,
 `r3000a-unroll.ll`. A first version of the rs change compared sign bits for `multu` too, which took the
@@ -137,7 +141,16 @@ Other findings:
 
 - **Stores set the pace of copies:** one per 2 cycles at most. `set_word` reaches 2.05 cycles per word.
   In `cpy_word`, loads first or interleaved with the stores make no difference (5698, 5709).
-- **`restrict` should help `up_24000` and `mix_vol` in C:** not tried here.
+- **What holds the scheduler back is aliasing, not the scheduler:** a store may write what the next load
+  reads, so `lw; sw; lw; nop; sw` has to stay. `restrict` takes the `nop`s behind loads in clang-O2 from
+  52 to 13. Most of the 13 are true dependencies (`mc_ecc`'s table, `list_walk`). Breaking
+  anti-dependencies after register allocation changed one `nop`, so the reuse of `$1` is not the cause.
+- **`restrict` pays where instructions set the pace:** `up_gen` 18% faster, `mul64` 12%, `gain_q16` 9%,
+  `cpy_word` 8%. Where stores or misses do, nothing changes although the `nop`s go: `up_24000` loses
+  43% of its instructions and no cycles. Worth adding to ps2sdk's copying and audio code.
+- **Clang found a better `up_gen` than the first hand version:** packing two samples into a word store
+  cost more in shifts than it saved, as the source stays in the D-cache. Halfword stores with two
+  chains in turn took the hand version from 5972 to 5026, equal to clang-O2r.
 
 ## Limits of these numbers
 

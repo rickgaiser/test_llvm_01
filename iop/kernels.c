@@ -7,21 +7,26 @@
 #define CAT(a, b) CAT2(a, b)
 #define K(n) CAT(V, n)
 
+/* restrict for the clang-O2-restrict variant: the only difference from clang-O2 */
+#ifndef R
+#define R
+#endif
+
 /* ---- data ---- */
 
 /* sysclib size_optimized/memcpy.c */
-u32 K(cpy_byte)(void *d, const void *s, u32 n, u32 x) {
-  u8 *p = d;
-  const u8 *q = s;
+u32 K(cpy_byte)(void *R d, const void *R s, u32 n, u32 x) {
+  u8 *R p = d;
+  const u8 *R q = s;
   while (n--)
     *p++ = *q++;
   return 0;
 }
 
 /* sysclib _wmemcopy: aligned words */
-u32 K(cpy_word)(void *d, const void *s, u32 n, u32 x) {
-  u32 *p = d;
-  const u32 *q = s;
+u32 K(cpy_word)(void *R d, const void *R s, u32 n, u32 x) {
+  u32 *R p = d;
+  const u32 *R q = s;
   for (n /= 4; n; n--)
     *p++ = *q++;
   return 0;
@@ -29,8 +34,8 @@ u32 K(cpy_word)(void *d, const void *s, u32 n, u32 x) {
 
 /* a payload behind a 14-byte Ethernet header: source aligned to 2 */
 typedef u32 __attribute__((aligned(1))) u32_unaligned;
-u32 K(cpy_unal)(void *d, const void *s, u32 n, u32 x) {
-  u32 *p = d;
+u32 K(cpy_unal)(void *R d, const void *R s, u32 n, u32 x) {
+  u32 *R p = d;
   const u32_unaligned *q = s;
   for (n /= 4; n; n--)
     *p++ = *q++;
@@ -38,15 +43,15 @@ u32 K(cpy_unal)(void *d, const void *s, u32 n, u32 x) {
 }
 
 /* sysclib _wmemset */
-u32 K(set_word)(void *d, const void *s, u32 n, u32 x) {
-  u32 *p = d;
+u32 K(set_word)(void *R d, const void *R s, u32 n, u32 x) {
+  u32 *R p = d;
   for (n /= 4; n; n--)
     *p++ = x;
   return 0;
 }
 
 /* sysclib strlen */
-u32 K(str_len)(void *d, const void *s, u32 n, u32 x) {
+u32 K(str_len)(void *R d, const void *R s, u32 n, u32 x) {
   const char *p = s;
   while (*p)
     p++;
@@ -56,7 +61,7 @@ u32 K(str_len)(void *d, const void *s, u32 n, u32 x) {
 /* ---- network ---- */
 
 /* lwIP inet_chksum.c, lwip_standard_chksum, algorithm 2, even length */
-u32 K(net_sum)(void *d, const void *s, u32 n, u32 x) {
+u32 K(net_sum)(void *R d, const void *R s, u32 n, u32 x) {
   const u16 *ps = s;
   u32 sum = 0;
   while (n > 1) {
@@ -69,9 +74,9 @@ u32 K(net_sum)(void *d, const void *s, u32 n, u32 x) {
 }
 
 /* htons() over the fields of a header, as lwIP's PP_HTONS */
-u32 K(net_swap)(void *d, const void *s, u32 n, u32 x) {
-  u16 *p = d;
-  const u16 *q = s;
+u32 K(net_swap)(void *R d, const void *R s, u32 n, u32 x) {
+  u16 *R p = d;
+  const u16 *R q = s;
   for (n /= 2; n; n--) {
     u32 v = *q++;
     *p++ = (u16)((v << 8) | (v >> 8));
@@ -80,9 +85,9 @@ u32 K(net_swap)(void *d, const void *s, u32 n, u32 x) {
 }
 
 /* smap xfer.c, CopyFromFIFO: the words a register gives, x is its address */
-u32 K(fifo_rd)(void *d, const void *s, u32 n, u32 x) {
+u32 K(fifo_rd)(void *R d, const void *R s, u32 n, u32 x) {
   volatile u32 *reg = (volatile u32 *)x;
-  u32 *p = d;
+  u32 *R p = d;
   for (u32 i = 0; i < n; i += 4)
     p[i / 4] = *reg;
   return 0;
@@ -91,7 +96,7 @@ u32 K(fifo_rd)(void *d, const void *s, u32 n, u32 x) {
 /* ---- storage ---- */
 
 /* mcman main.c, mcman_calcEDC */
-u32 K(mc_edc)(void *d, const void *s, u32 n, u32 x) {
+u32 K(mc_edc)(void *R d, const void *R s, u32 n, u32 x) {
   const u8 *p = s;
   u32 sum = 0;
   for (u32 i = 0; i < n; i++)
@@ -100,7 +105,7 @@ u32 K(mc_edc)(void *d, const void *s, u32 n, u32 x) {
 }
 
 /* mcman main.c, McDataChecksum: for each 128-byte block */
-u32 K(mc_ecc)(void *d, const void *s, u32 n, u32 x) {
+u32 K(mc_ecc)(void *R d, const void *R s, u32 n, u32 x) {
   const u8 *p = s;
   u8 *e = d;
   for (; n; n -= 128, e += 3) {
@@ -121,7 +126,7 @@ u32 K(mc_ecc)(void *d, const void *s, u32 n, u32 x) {
 }
 
 /* mx4sio_bd mx4sio.c, reverse_buffer: bits of each byte */
-u32 K(bit_rev)(void *d, const void *s, u32 n, u32 x) {
+u32 K(bit_rev)(void *R d, const void *R s, u32 n, u32 x) {
   u32 *b = d;
   for (u32 i = 0; i < n / 4; i++) {
     u32 v = b[i];
@@ -134,7 +139,7 @@ u32 K(bit_rev)(void *d, const void *s, u32 n, u32 x) {
 }
 
 /* the usual table CRC-32 (GPT partition tables in bdm) */
-u32 K(crc32)(void *d, const void *s, u32 n, u32 x) {
+u32 K(crc32)(void *R d, const void *R s, u32 n, u32 x) {
   const u8 *p = s;
   u32 c = ~0u;
   while (n--)
@@ -143,7 +148,7 @@ u32 K(crc32)(void *d, const void *s, u32 n, u32 x) {
 }
 
 /* vfat: the first free entry of a FAT32 table */
-u32 K(fat_scan)(void *d, const void *s, u32 n, u32 x) {
+u32 K(fat_scan)(void *R d, const void *R s, u32 n, u32 x) {
   const u32 *f = s;
   u32 i = 0;
   while (f[i] != 0)
@@ -154,10 +159,10 @@ u32 K(fat_scan)(void *d, const void *s, u32 n, u32 x) {
 /* ---- sound ---- */
 
 /* audsrv upsamplers.c, up_24000_16_stereo: n bytes in. Left at d, right at d + 2n / 2 */
-u32 K(up_24000)(void *d, const void *s, u32 n, u32 x) {
-  short *left = d;
-  short *right = (short *)((u8 *)d + n);
-  const short *src = s;
+u32 K(up_24000)(void *R d, const void *R s, u32 n, u32 x) {
+  short *R left = d;
+  short *R right = (short *)((u8 *)d + n);
+  const short *R src = s;
   for (u32 p = 0; p < n / 4; p++) {
     *left++ = src[0];
     *right++ = src[1];
@@ -168,10 +173,10 @@ u32 K(up_24000)(void *d, const void *s, u32 n, u32 x) {
 }
 
 /* audsrv upsamplers.c, up_generic_16_stereo: 512 samples out for each block */
-u32 K(up_gen)(void *d, const void *s, u32 n, u32 x) {
-  short *left = d;
-  short *right = (short *)((u8 *)d + 1024);
-  const short *src = s;
+u32 K(up_gen)(void *R d, const void *R s, u32 n, u32 x) {
+  short *R left = d;
+  short *R right = (short *)((u8 *)d + 1024);
+  const short *R src = s;
   for (int p = 0; p < 512; p++) {
     int q = up_lut[p];
     *left++ = src[q * 2];
@@ -181,9 +186,9 @@ u32 K(up_gen)(void *d, const void *s, u32 n, u32 x) {
 }
 
 /* a software mixer: d += s * volume, saturated; x is the volume */
-u32 K(mix_vol)(void *d, const void *s, u32 n, u32 x) {
-  short *p = d;
-  const short *q = s;
+u32 K(mix_vol)(void *R d, const void *R s, u32 n, u32 x) {
+  short *R p = d;
+  const short *R q = s;
   int vol = x;
   for (n /= 2; n; n--) {
     int v = *p + ((*q++ * vol) >> 15);
@@ -197,16 +202,16 @@ u32 K(mix_vol)(void *d, const void *s, u32 n, u32 x) {
 }
 
 /* fixed point gain, 16.16: x is any size, the samples are 16 bits */
-u32 K(gain_q16)(void *d, const void *s, u32 n, u32 x) {
+u32 K(gain_q16)(void *R d, const void *R s, u32 n, u32 x) {
   int *p = d;
-  const short *q = s;
+  const short *R q = s;
   for (n /= 2; n; n--)
     *p++ = (int)(x * (u32)*q++) >> 16;
   return 0;
 }
 
 /* audsrv audsrv.c: into a ring, x is where the write position starts */
-u32 K(ring_put)(void *d, const void *s, u32 n, u32 x) {
+u32 K(ring_put)(void *R d, const void *R s, u32 n, u32 x) {
   u8 *ring = d;
   const u8 *p = s;
   u32 pos = x;
@@ -225,7 +230,7 @@ struct node {
   struct node *next;
   u32 key;
 };
-u32 K(list_walk)(void *d, const void *s, u32 n, u32 x) {
+u32 K(list_walk)(void *R d, const void *R s, u32 n, u32 x) {
   const struct node *p = s;
   u32 sum = 0;
   while (p) {
@@ -236,7 +241,7 @@ u32 K(list_walk)(void *d, const void *s, u32 n, u32 x) {
 }
 
 /* printf's %u (sysclib): the digits of each word */
-u32 K(itoa10)(void *d, const void *s, u32 n, u32 x) {
+u32 K(itoa10)(void *R d, const void *R s, u32 n, u32 x) {
   const u32 *p = s;
   char *o = d;
   for (n /= 4; n; n--) {
@@ -250,16 +255,16 @@ u32 K(itoa10)(void *d, const void *s, u32 n, u32 x) {
 }
 
 /* unit conversion, as timers do: a constant the compiler knows */
-u32 K(mul_const)(void *d, const void *s, u32 n, u32 x) {
-  u32 *p = d;
-  const u32 *q = s;
+u32 K(mul_const)(void *R d, const void *R s, u32 n, u32 x) {
+  u32 *R p = d;
+  const u32 *R q = s;
   for (n /= 4; n; n--)
     *p++ = *q++ * 1000;
   return 0;
 }
 
 /* 64-bit products, as for timer values */
-u32 K(mul64)(void *d, const void *s, u32 n, u32 x) {
+u32 K(mul64)(void *R d, const void *R s, u32 n, u32 x) {
   u64 *p = d;
   const u64 *q = s;
   for (n /= 16; n; n--, q += 2)

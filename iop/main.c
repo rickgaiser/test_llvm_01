@@ -8,17 +8,17 @@
 IRX_ID("iop_bench", 1, 0);
 
 #define DECL(n)                                                                            \
-  extern kernel gos_##n, go2_##n, cos_##n, co2_##n, asm_##n;
+  extern kernel gos_##n, go2_##n, cos_##n, co2_##n, cor_##n, asm_##n;
 KERNELS(DECL)
 
-static const char *const variants[] = {"gcc-Os", "gcc-O2", "clang-Os", "clang-O2", "asm"};
-#define NV 5
+static const char *const variants[] = {"gcc-Os", "gcc-O2", "clang-Os", "clang-O2", "clang-O2r", "asm"};
+#define NV 6
 
 struct bench {
   const char *name;
   kernel *f[NV];
 };
-#define ROW(n) {#n, {gos_##n, go2_##n, cos_##n, co2_##n, asm_##n}},
+#define ROW(n) {#n, {gos_##n, go2_##n, cos_##n, co2_##n, cor_##n, asm_##n}},
 static const struct bench benches[] = {KERNELS(ROW)};
 #define NB (sizeof benches / sizeof *benches)
 

@@ -205,13 +205,13 @@ def prep(name):
 
 kernels = sorted({k[4:] for k in syms if k.startswith('asm_')}, key=lambda k: syms['asm_' + k])
 bad = 0
-print('%-10s %9s %9s %9s %9s %9s' % ('', 'gcc-Os', 'gcc-O2', 'clang-Os', 'clang-O2', 'asm'))
+print('%-10s %9s %9s %9s %9s %9s %9s' % ('', 'gcc-Os', 'gcc-O2', 'clang-Os', 'clang-O2', 'clang-O2r', 'asm'))
 for k in kernels:
     if only and k not in only:
         continue
     want = None
     row = []
-    for v in ('gos_', 'go2_', 'cos_', 'co2_', 'asm_'):
+    for v in ('gos_', 'go2_', 'cos_', 'co2_', 'cor_', 'asm_'):
         src, s, n, x = prep(k)
         mem = bytearray(0x200000)
         mem[BASE:BASE + len(image)] = image
@@ -230,6 +230,6 @@ for k in kernels:
             d = next((i for i in range(12288) if out[1][i] != want[1][i]), -1)
             print(k, v, 'DIFFERS: ret %x want %x, first byte %d' % (ret, want[0], d)); bad += 1
         row.append(str(count))
-    print('%-10s %9s %9s %9s %9s %9s' % (k, *row))
+    print('%-10s %9s %9s %9s %9s %9s %9s' % (k, *row))
 print('wrong:', bad)
 sys.exit(1 if bad else 0)
