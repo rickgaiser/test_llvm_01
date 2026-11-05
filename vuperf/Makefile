@@ -8,7 +8,7 @@
 
 HERE   := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 PS2MAX := $(abspath $(HERE)/../../..)
-LLVM   ?= $(PS2MAX)/build/toolchain/generic/llvm/feature/bin
+LLVM   ?= $(PS2MAX)/build/toolchain/llvm/feature/bin
 OUT    ?= $(PS2MAX)/build/apps/llvm_bench/vuperf
 MAXSDK ?= $(PS2MAX)/libs/maxsdk
 MX_OUT ?= $(PS2MAX)/build/libs/maxsdk

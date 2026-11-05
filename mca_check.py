@@ -128,7 +128,7 @@ def mca_cycles(mca, asm, reps, iters=100):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mca", default=os.path.join(TOP, "build/toolchain/generic/llvm/feature/bin/llvm-mca"))
+    ap.add_argument("--mca", default=os.path.join(TOP, "build/toolchain/llvm/feature/bin/llvm-mca"))
     ap.add_argument("--log", default=os.path.join(TOP, "build/apps/llvm_bench/gcc/run.log"))
     ap.add_argument("--table", default="VU0 macro mode")
     ap.add_argument("--src", default=os.path.join(HERE, "uarch_tests.c"))

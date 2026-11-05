@@ -17,14 +17,17 @@ set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 PS2MAX=$(cd "$HERE/../.." && pwd)
-BUILD_ROOT=$PS2MAX/build/toolchain/generic/llvm
+BUILD_ROOT=$PS2MAX/build/toolchain/llvm
 OUT_ROOT=$PS2MAX/build/apps/llvm_bench
 PS2_IP=${PS2_IP:-192.168.1.10}
-# Our own ps2client build (toolchain/generic/llvm/tools/ps2client), not the one in install/bin
-PS2CLIENT=${PS2CLIENT:-$PS2MAX/toolchain/generic/llvm/tools/ps2client/bin/ps2client}
+# Our own ps2client build (tools/ps2client), not the one in install/bin
+PS2CLIENT=${PS2CLIENT:-$PS2MAX/tools/ps2client/bin/ps2client}
 ALL_VARIANTS="gcc upstream pr feature feature-vu0 asm asm-vu0"
 
-export PS2DEV=${PS2DEV:-/home/rgaiser/dev/ps2/ps2dev/install}
+# The one part of ps2max that uses ps2dev beyond its IOP side: the bench compares
+# against ps2dev's EE gcc, and every variant links the same newlib and ps2sdk
+# runtime so that only the compiler differs.
+export PS2DEV=${PS2DEV:-$(cd "$PS2MAX/../ps2dev/install" && pwd)}
 export PS2SDK=${PS2SDK:-$PS2DEV/ps2sdk}
 
 # Build directory of the clang used for a variant
@@ -128,7 +131,7 @@ cmd_run() {
   [ -n "$v" ] || { echo "Usage: $0 run <variant>"; exit 1; }
   local out=$OUT_ROOT/$v
   [ -f "$out/test.elf" ] || { echo "$out/test.elf missing, run: $0 build $v"; exit 1; }
-  [ -x "$PS2CLIENT" ] || { echo "no ps2client at $PS2CLIENT (make -C $PS2MAX/toolchain/generic/llvm/tools/ps2client)"; exit 1; }
+  [ -x "$PS2CLIENT" ] || { echo "no ps2client at $PS2CLIENT (make -C $PS2MAX/tools/ps2client)"; exit 1; }
   # ps2client serves host: from its working directory
   cd "$out"
   # -e: exit as soon as the test prints its last line

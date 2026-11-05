@@ -8,7 +8,7 @@ BENCH=$(cd "$HERE/../.." && pwd)
 PS2MAX=$(cd "$BENCH/../.." && pwd)
 OUT=${2:-$PS2MAX/build/ps2-hw-test/src/app}
 ASMB=$PS2MAX/build/apps/llvm_bench/asm
-CLANG=$PS2MAX/build/toolchain/generic/llvm/feature/bin/clang
+CLANG=$PS2MAX/build/toolchain/llvm/feature/bin/clang
 GCC=$PS2DEV/ee/bin/mips64r5900el-ps2-elf-gcc
 mkdir -p "$OUT"
 python3 "$HERE/gen_app.py" "$OUT" "$1"
