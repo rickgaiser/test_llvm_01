@@ -81,6 +81,11 @@ feature-vu0 0x6f81d5ed).
 The loop is plain `div.s` with gcc and clang, and every clang build gives 0x6f81d5ed. The cause
 is not known yet.
 
+## IOP
+
+The same comparison for the IOP's R3000A, on the patterns of an I/O processor (sound, network,
+storage), with hand-written assembly for each kernel: [iop/README.md](iop/README.md).
+
 ## Usage
 
 ```sh
