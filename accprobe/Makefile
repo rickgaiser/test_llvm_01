@@ -14,11 +14,11 @@ MAXSDK ?= $(PS2MAX)/libs/maxsdk
 MX_OUT ?= $(PS2MAX)/build/libs/maxsdk
 
 CLANG  = $(LLVM)/clang
-CFLAGS = -Wall -O2 -ffreestanding -I$(MAXSDK)/include \
+CFLAGS = -Wall -O2 -ffreestanding -I$(MAXSDK)/ee/include \
          --target=mips64el -mcpu=r5900 -mabi=n32 -fno-pic -mno-abicalls -G 0 -mvu0
 MX_LIB  = $(MX_OUT)/libmx.a
 MX_CRT0 = $(MX_OUT)/obj/crt0.o
-LINK    = $(LLVM)/ld.lld -m elf32ltsmipn32 -T$(MAXSDK)/ld/maxsdk.ld -z max-page-size=128 \
+LINK    = $(LLVM)/ld.lld -m elf32ltsmipn32 -T$(MAXSDK)/ee/ld/maxsdk.ld -z max-page-size=128 \
           --gc-sections
 
 all: $(OUT)/accprobe.elf

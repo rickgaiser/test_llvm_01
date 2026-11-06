@@ -40,8 +40,8 @@ PS2MAX   ?= $(abspath ../..)
 MX_OUT   ?= $(PS2MAX)/build/libs/maxsdk
 PICOLIBC ?= $(PS2MAX)/build/libs/picolibc/install
 LLVM     ?= $(dir $(CLANG))
-CFLAGS    = -Wall -O3 -ffast-math -I. -isystem $(PICOLIBC)/include -I$(MAXSDK)/compat/ps2sdk \
-            -I$(MAXSDK)/include --target=mips64el -mcpu=r5900 -mabi=n32 -fno-pic -mno-abicalls \
+CFLAGS    = -Wall -O3 -ffast-math -I. -isystem $(PICOLIBC)/include -I$(MAXSDK)/ee/compat/ps2sdk \
+            -I$(MAXSDK)/ee/include --target=mips64el -mcpu=r5900 -mabi=n32 -fno-pic -mno-abicalls \
             -G 0 -ffp-contract=fast -fomit-frame-pointer
 MX_LIBS   = $(MX_OUT)/libmxc.a $(PICOLIBC)/lib/libc.a $(MX_OUT)/libmx.a $(MX_OUT)/librt.a
 endif
@@ -63,7 +63,7 @@ all: $(BIN) $(ASMS)
 
 ifeq ($(SDK),maxsdk)
 $(BIN): $(OBJS)
-	$(LLVM)ld.lld -m elf32ltsmipn32 -T$(MAXSDK)/ld/maxsdk.ld -z max-page-size=128 --gc-sections \
+	$(LLVM)ld.lld -m elf32ltsmipn32 -T$(MAXSDK)/ee/ld/maxsdk.ld -z max-page-size=128 --gc-sections \
 	  -o $@ $(MX_OUT)/obj/crt0.o $^ $(MX_LIBS)
 else
 $(BIN): $(OBJS)
